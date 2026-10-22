@@ -5,15 +5,15 @@ const PROJECTS = [
     id: 'warriorcats',
     title: "Warrior Cats: Clans of the Forest",
     year: "2026",
-    platforms: "PS5 • Switch 1 & 2 • Xbox • Steam",
-    tech: "UE5 / C++ / TRC & XR Compliance",
+    platforms: "PlayStation • Switch2 • XBOX • PC",
+    tech: "UE5 / C++ / Handheld Optimization",
     img: "/assets/proj/warriorcats.png"
   },
   {
     id: 'hwr',
     title: "Hot Wheels: Let's Race",
     year: "2025",
-    platforms: "Consoles & PC",
+    platforms: "PlayStation • XBOX • Switch • PC",
     tech: "C++ / CPU & GPU Frame-Time Optimization",
     img: "/assets/proj/hwr.png"
   },
@@ -21,15 +21,23 @@ const PROJECTS = [
     id: 'lts',
     title: "Looney Tunes: Wacky World of Sports",
     year: "2024",
-    platforms: "PS5 • Xbox Series X|S • Switch • PC",
+    platforms: "PlayStation • XBOX • Switch • PC",
     tech: "Unreal Engine / Core Systems & Multiplayer",
     img: "/assets/proj/lts.png"
+  },
+  {
+    id: 'ala',
+    title: "Avatar: The Last Airbender – Quest for Balance",
+    year: "2023",
+    platforms: "PlayStation • XBOX • Switch • PC",
+    tech: "Unreal Engine / VFX & Friend Invite",
+    img: "/assets/proj/ala.png"
   },
   {
     id: 'nkr3',
     title: "Nickelodeon Kart Racers 3: Slime Speedway",
     year: "2022",
-    platforms: "PlayStation • Xbox • Switch • PC",
+    platforms: "PlayStation • XBOX • Switch • PC",
     tech: "Custom Dynamic Slime Shader & Distance Fields",
     img: "/assets/proj/nkr3.png"
   },
@@ -37,7 +45,7 @@ const PROJECTS = [
     id: 'nkr2',
     title: "Nickelodeon Kart Racers 2: Grand Prix",
     year: "2020",
-    platforms: "PS4 • Xbox One • Switch • PC",
+    platforms: "Playstation 4 • XB1 • Switch • PC",
     tech: "Real-Time Rendering Pipeline & Memory Profiling",
     img: "/assets/proj/nkr2.png"
   },
@@ -45,7 +53,7 @@ const PROJECTS = [
     id: 'nkr1',
     title: "Nickelodeon Kart Racers",
     year: "2018",
-    platforms: "PS4 • Xbox One • Switch",
+    platforms: "Playstation 4 • XB1 • Switch • PC",
     tech: "Custom C++ Engine Architecture",
     img: "/assets/proj/nkr1.png"
   },
@@ -53,7 +61,7 @@ const PROJECTS = [
     id: 'powerrangers',
     title: "S.M.M. Power Rangers: Mega Battle",
     year: "2017",
-    platforms: "PS4 • Xbox One • PC",
+    platforms: "Playstation 4 • XB1 • PC",
     tech: "PlayStation Gnmx / DirectX Native API Port",
     img: "/assets/proj/powerrangers.png"
   },
@@ -147,7 +155,9 @@ function App() {
       // Infinite carousel: loop length is the exact distance between copy 1 and copy 2
       const el = carouselRef.current;
       if (el && !p.isDragging && el.children.length > PROJECTS.length) {
-        const speed = p.reduceMotion ? 0 : (p.isPaused ? 0.15 : p.baseCarouselSpeed);
+        // const speed = p.reduceMotion ? 0 : (p.isPaused ? 0.15 : p.baseCarouselSpeed);
+        // Force motion even on Save Energy Mode
+        const speed = p.isPaused ? 0.15 : p.baseCarouselSpeed;
         p.scrollPos += speed + p.carouselBoost;
         p.carouselBoost *= 0.95;
 
@@ -207,6 +217,7 @@ function App() {
     const p = physics.current;
     if (carouselRef.current) p.scrollPos = carouselRef.current.scrollLeft;
     p.isDragging = false;
+    p.isPaused = false; // <-- Added for mobiles
   };
 
   // Cube: drag to spin, click (without dragging) to accelerate
@@ -449,7 +460,7 @@ function App() {
 
                   <p className="light-copy mt-4 text-base md:text-[17px] text-slate-200 leading-relaxed">
                     14+ years architecting, modernizing, and profiling multi-million-line C++ codebases across Windows
-                    Desktop, PlayStation 5/4/Vita, Xbox Series X|S, Nintendo Switch 1 &amp; 2, and Mobile. Specialized
+                   (Steam, Epic, MS), PlayStation 5/4/Vita, XBOX Series X|S, Nintendo Switch 1 &amp; 2, and Mobile. Specialized
                     in CPU/GPU bottleneck mitigation, custom rendering pipelines, and zero-defect hardware compliance.
                   </p>
 
@@ -591,16 +602,18 @@ function App() {
             </button>
           </div>
         </div>
-
         <div
           ref={carouselRef}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUpOrLeave}
           onMouseLeave={handleMouseUpOrLeave}
-          onMouseEnter={() => { physics.current.isPaused = true; }}
+          // Usar onPointerEnter para detectar si es realmente un mouse
+          onPointerEnter={(e) => { if (e.pointerType === 'mouse') physics.current.isPaused = true; }}
+          onPointerLeave={() => { physics.current.isPaused = false; }}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
           className="relative flex overflow-x-auto no-scrollbar gap-4 px-6 cursor-grab active:cursor-grabbing"
         >
           {infiniteProjects.map((proj, index) => {
