@@ -6,7 +6,7 @@ const PROJECTS = [
     title: "Warrior Cats: Clans of the Forest",
     year: "2026",
     platforms: "PlayStation 5 • Switch 2 • XBOX Series X|S • PC",
-    tech: "UE5 / C++ / Handheld Optimization",
+    tech: "Unreal Engine / Handheld Optimization",
     img: "/assets/proj/warriorcats.png"
   },
   {
@@ -14,7 +14,7 @@ const PROJECTS = [
     title: "Hot Wheels: Let's Race",
     year: "2025",
     platforms: "PlayStation 5 • XBOX Series X|S • Switch • PC",
-    tech: "C++ / CPU & GPU Frame-Time Optimization",
+    tech: "Unreal Engine / Logitech Wheel",
     img: "/assets/proj/hwr.png"
   },
   {
@@ -24,6 +24,14 @@ const PROJECTS = [
     platforms: "PlayStation 5/4 • XBOX Series X|S • Switch • PC",
     tech: "Unreal Engine / Core Systems & Multiplayer",
     img: "/assets/proj/lts.png"
+  },
+  {
+    id: 'dwr',
+    title: "Dreamworks All-Star Kart Racing",
+    year: "2023",
+    platforms: "PlayStation 5/4 • XBOX • Switch • PC",
+    tech: "Unreal Engine / CPU & GPU Frame-Time Optimization",
+    img: "/assets/proj/dwr.png"
   },
   {
     id: 'ala',
