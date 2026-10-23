@@ -5,7 +5,7 @@ const PROJECTS = [
     id: 'warriorcats',
     title: "Warrior Cats: Clans of the Forest",
     year: "2026",
-    platforms: "PlayStation 5 • Switch 2 &amp; 1 • XBOX Series X|S • PC",
+    platforms: "PlayStation 5 • Switch 2 • XBOX Series X|S • PC",
     tech: "UE5 / C++ / Handheld Optimization",
     img: "/assets/proj/warriorcats.png"
   },
