@@ -5,7 +5,7 @@ const PROJECTS = [
     id: 'warriorcats',
     title: "Warrior Cats: Clans of the Forest",
     year: "2026",
-    platforms: "PlayStation • Switch2 • XBOX • PC",
+    platforms: "PlayStation 5 • Switch 2 &amp; 1 • XBOX Series X|S • PC",
     tech: "UE5 / C++ / Handheld Optimization",
     img: "/assets/proj/warriorcats.png"
   },
@@ -13,7 +13,7 @@ const PROJECTS = [
     id: 'hwr',
     title: "Hot Wheels: Let's Race",
     year: "2025",
-    platforms: "PlayStation • XBOX • Switch • PC",
+    platforms: "PlayStation 5 • XBOX Series X|S • Switch • PC",
     tech: "C++ / CPU & GPU Frame-Time Optimization",
     img: "/assets/proj/hwr.png"
   },
@@ -21,7 +21,7 @@ const PROJECTS = [
     id: 'lts',
     title: "Looney Tunes: Wacky World of Sports",
     year: "2024",
-    platforms: "PlayStation • XBOX • Switch • PC",
+    platforms: "PlayStation 5/4 • XBOX Series X|S • Switch • PC",
     tech: "Unreal Engine / Core Systems & Multiplayer",
     img: "/assets/proj/lts.png"
   },
@@ -29,7 +29,7 @@ const PROJECTS = [
     id: 'ala',
     title: "Avatar: The Last Airbender – Quest for Balance",
     year: "2023",
-    platforms: "PlayStation • XBOX • Switch • PC",
+    platforms: "PlayStation 5/4 • XBOX Series X|S • Switch • PC",
     tech: "Unreal Engine / VFX & Friend Invite",
     img: "/assets/proj/ala.png"
   },
@@ -37,7 +37,7 @@ const PROJECTS = [
     id: 'nkr3',
     title: "Nickelodeon Kart Racers 3: Slime Speedway",
     year: "2022",
-    platforms: "PlayStation • XBOX • Switch • PC",
+    platforms: "PlayStation 5/4 • XBOX Series X|S • Switch • PC",
     tech: "Custom Dynamic Slime Shader & Distance Fields",
     img: "/assets/proj/nkr3.png"
   },
@@ -61,7 +61,7 @@ const PROJECTS = [
     id: 'powerrangers',
     title: "S.M.M. Power Rangers: Mega Battle",
     year: "2017",
-    platforms: "Playstation 4 • XB1 • PC",
+    platforms: "Playstation 4 • XB1",
     tech: "PlayStation Gnmx / DirectX Native API Port",
     img: "/assets/proj/powerrangers.png"
   },
@@ -69,7 +69,7 @@ const PROJECTS = [
     id: 'kiilka',
     title: "Kilka: Card Gods",
     year: "2014",
-    platforms: "PS Vita • Android • iOS",
+    platforms: "PlayStation Vita • Android • iOS",
     tech: "1st LatAm Studio Release on Sony Hardware",
     img: "/assets/proj/kiilka.png"
   },
@@ -157,7 +157,7 @@ function App() {
       if (el && !p.isDragging && el.children.length > PROJECTS.length) {
         // const speed = p.reduceMotion ? 0 : (p.isPaused ? 0.15 : p.baseCarouselSpeed);
         // Force motion even on Save Energy Mode
-        const speed = p.isPaused ? 0.15 : p.baseCarouselSpeed;
+        const speed = p.isPaused ? 0.0 : p.baseCarouselSpeed;
         p.scrollPos += speed + p.carouselBoost;
         p.carouselBoost *= 0.95;
 
@@ -186,7 +186,7 @@ function App() {
 
   const boostCarousel = (amount) => {
     physics.current.carouselBoost += amount;
-    physics.current.velRotY += amount * 0.25;
+    physics.current.velRotY += amount * 0.10;
   };
 
   // Carousel: mouse drag
@@ -248,8 +248,38 @@ function App() {
     if (p.cubeMoved < 4) boostCarousel(6);
   };
 
-  const selectProject = (proj) =>
+  const selectProject = (proj) => {
+    physics.current.isPaused = true; // <-- Pausa el carrusel al hacer clic
     setSelectedProject((cur) => (cur && cur.id === proj.id ? null : proj));
+  };
+
+  const centerProject = (proj, index) => {
+    const el = carouselRef.current;
+    if (!el) return;
+    
+    // Obtener el elemento DOM correspondiente al índice exacto
+    const cardNode = el.children[index];
+    if (!cardNode) return;
+
+    // Calcular la distancia necesaria para llevar el elemento al centro del contenedor
+    const containerWidth = el.clientWidth;
+    const cardLeft = cardNode.offsetLeft;
+    const cardWidth = cardNode.offsetWidth;
+    
+    const targetScrollLeft = cardLeft - (containerWidth / 2) + (cardWidth / 2);
+
+    // Actualizar la posición de física y hacer el scroll suave
+    physics.current.scrollPos = targetScrollLeft;
+    physics.current.carouselBoost = 0; // Detener cualquier impulso previo
+    physics.current.isPaused = true;  // Pausar el movimiento automático
+
+    el.scrollTo({
+      left: targetScrollLeft,
+      behavior: 'smooth'
+    });
+
+    setSelectedProject((cur) => (cur && cur.id === proj.id ? null : proj));
+  };
 
   const infiniteProjects = [...PROJECTS, ...PROJECTS];
 
@@ -383,7 +413,7 @@ function App() {
 
         <div className="hidden lg:flex items-center gap-4 text-sm">
           <a
-            href="https://gamedu.tech/"
+            href="https://worldcampus.gamedu.tech/course/e7533e00-ce6f-11f1-923c-c93711ca83ed"
             target="_blank"
             rel="noreferrer"
             className="px-3 py-1 text-orange-300 border border-orange-400/50 hover:bg-orange-400/10 transition"
@@ -440,7 +470,7 @@ function App() {
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                     <span className="orb tracking-wider text-xs uppercase text-cyan-300 font-bold">Multi-Platform Developer</span>
                     <a
-                      href="https://gamedu.tech/"
+                      href="https://worldcampus.gamedu.tech/course/e7533e00-ce6f-11f1-923c-c93711ca83ed"
                       target="_blank"
                       rel="noreferrer"
                       className="text-sm text-orange-300 border border-orange-400/50 hover:bg-orange-400/10 px-2.5 py-0.5 transition flex items-center gap-2"
@@ -517,7 +547,7 @@ function App() {
                       <span className="orb text-orange-300 text-sm pt-1">02</span>
                       <span>
                         <strong className="text-white font-semibold">GAMEDU Technical Instructor (</strong>
-                        <a href="https://gamedu.tech/" target="_blank" rel="noreferrer" className="text-orange-300 underline underline-offset-4 hover:text-orange-200">
+                        <a href="https://worldcampus.gamedu.tech/course/e7533e00-ce6f-11f1-923c-c93711ca83ed" target="_blank" rel="noreferrer" className="text-orange-300 underline underline-offset-4 hover:text-orange-200">
                           gamedu.tech
                         </a>
                         <strong className="text-white font-semibold">):</strong> Mentoring engineers in the High-Performance C++
@@ -578,7 +608,7 @@ function App() {
             <span className="w-2 h-2 bg-cyan-300 shadow-[0_0_10px_#00E5FF] shrink-0" />
             <h2 className="orb tracking-wider text-xs font-bold uppercase text-slate-100">Shipped &amp; in production</h2>
             {selectedProject && (
-              <span className="hidden sm:inline-block text-sm text-orange-200 bg-orange-400/10 border border-orange-400/50 px-2.5 py-0.5 truncate max-w-[46ch]">
+              <span className="hidden sm:inline-block text-sm text-orange-200 bg-orange-400/10 border border-orange-400/50 px-2.5 py-0.5 sm:max-w-[60ch] md:max-w-[85ch] lg:max-w-none">
                 {selectedProject.title} · {selectedProject.tech}
               </span>
             )}
@@ -587,14 +617,14 @@ function App() {
           <div className="flex items-center gap-2">
             <span className="hidden md:inline text-xs text-slate-400 mr-2">Wheel / drag / click to accelerate</span>
             <button
-              onClick={() => boostCarousel(-7)}
+              onClick={() => boostCarousel(-25)}
               className="orb tracking-wider px-3 py-1 text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition"
               aria-label="Accelerate carousel backward"
             >
               ‹‹ REV
             </button>
             <button
-              onClick={() => boostCarousel(7)}
+              onClick={() => boostCarousel(25)}
               className="orb tracking-wider px-3 py-1 text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition"
               aria-label="Accelerate carousel forward"
             >
@@ -626,13 +656,13 @@ function App() {
                 tabIndex={isCopy ? -1 : 0}
                 aria-hidden={isCopy ? 'true' : undefined}
                 aria-pressed={isSelected ? 'true' : 'false'}
-                onClick={() => selectProject(proj)}
+                onClick={() => centerProject(proj, index)} // <-- AQUÍ USAMOS LA NUEVA FUNCIÓN
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectProject(proj); }
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); centerProject(proj, index); }
                 }}
                 onFocus={() => { physics.current.isPaused = true; }}
                 onBlur={() => { physics.current.isPaused = false; }}
-                className={`group relative min-w-[270px] sm:min-w-[300px] h-40 overflow-hidden bg-[#050d18] border transition-all duration-300 shrink-0 ${
+                className={`group relative w-[280px] sm:w-[474px] h-[94px] sm:h-[160px] overflow-hidden bg-[#050d18] border transition-all duration-300 shrink-0 ${
                   isSelected
                     ? 'border-orange-400 shadow-[0_0_22px_rgba(255,154,31,0.4)]'
                     : 'border-cyan-400/30 hover:border-cyan-300 hover:shadow-[0_0_20px_rgba(0,229,255,0.35)]'
@@ -674,6 +704,14 @@ function App() {
           })}
         </div>
       </section>
+
+      {/* ==================== 4. FOOTER / LEGAL ==================== */}
+      <footer className="relative z-20 bg-[#030811] py-3 text-center border-t border-cyan-400/10 shrink-0">
+        <p className="text-[9px] sm:text-[10px] text-slate-500/60 max-w-5xl mx-auto px-6 leading-relaxed tracking-wide">
+          All contents, game titles, trade names and/or trade dress, trademarks, artwork, and associated imagery are trademarks and/or copyright material of their respective owners. All rights reserved.
+        </p>
+      </footer>
+
     </div>
   );
 }
