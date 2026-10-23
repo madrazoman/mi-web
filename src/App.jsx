@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 
 const PROJECTS = [
   {
@@ -385,6 +386,8 @@ function App() {
       />
       <div className="horizon" />
       <div className="grid-floor" />
+      
+      <Analytics />
 
       {/* ==================== 1. TOP BAR ==================== */}
       <header className="relative z-20 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 md:px-12 py-3 border-b border-cyan-400/25 bg-[#02050a]/85 backdrop-blur-md shrink-0">
