@@ -7,6 +7,7 @@ const PROJECTS = [
     title: "Warrior Cats: Clans of the Forest",
     year: "2026",
     platforms: "PlayStation 5 • Switch 2 • XBOX Series X|S • PC",
+    platforms_short: "PS5 • Switch • XBOX • PC",
     tech: "Unreal Engine / Handheld Optimization",
     img: "/assets/proj/warriorcats.png"
   },
@@ -15,6 +16,7 @@ const PROJECTS = [
     title: "Hot Wheels: Let's Race",
     year: "2025",
     platforms: "PlayStation 5 • XBOX Series X|S • Switch • PC",
+    platforms_short: "PS5 • XBOX • Switch • PC",
     tech: "Unreal Engine / Logitech Wheel",
     img: "/assets/proj/hwr.png"
   },
@@ -23,6 +25,7 @@ const PROJECTS = [
     title: "Looney Tunes: Wacky World of Sports",
     year: "2024",
     platforms: "PlayStation 5/4 • XBOX Series X|S • Switch • PC",
+    platforms_short: "PS • XBOX • Switch • PC",
     tech: "Unreal Engine / Core Systems & Multiplayer",
     img: "/assets/proj/lts.png"
   },
@@ -31,6 +34,7 @@ const PROJECTS = [
     title: "Dreamworks All-Star Kart Racing",
     year: "2023",
     platforms: "PlayStation 5/4 • XBOX • Switch • PC",
+    platforms_short: "PS • XBOX • Switch • PC",
     tech: "Unreal Engine / CPU & GPU Frame-Time Optimization",
     img: "/assets/proj/dwr.png"
   },
@@ -39,6 +43,7 @@ const PROJECTS = [
     title: "Avatar: The Last Airbender – Quest for Balance",
     year: "2023",
     platforms: "PlayStation 5/4 • XBOX Series X|S • Switch • PC",
+    platforms_short: "PS • XBOX • Switch • PC",
     tech: "Unreal Engine / VFX & Friend Invite",
     img: "/assets/proj/ala.png"
   },
@@ -47,6 +52,7 @@ const PROJECTS = [
     title: "Nickelodeon Kart Racers 3: Slime Speedway",
     year: "2022",
     platforms: "PlayStation 5/4 • XBOX Series X|S • Switch • PC",
+    platforms_short: "PS • XBOX • Switch • PC",
     tech: "Custom Dynamic Slime Shader & Distance Fields",
     img: "/assets/proj/nkr3.png"
   },
@@ -55,6 +61,7 @@ const PROJECTS = [
     title: "Nickelodeon Kart Racers 2: Grand Prix",
     year: "2020",
     platforms: "Playstation 4 • XB1 • Switch • PC",
+    platforms_short: "PS4 • XB1 • Switch • PC",
     tech: "Real-Time Rendering Pipeline & Memory Profiling",
     img: "/assets/proj/nkr2.png"
   },
@@ -63,6 +70,7 @@ const PROJECTS = [
     title: "Nickelodeon Kart Racers",
     year: "2018",
     platforms: "Playstation 4 • XB1 • Switch • PC",
+    platforms_short: "PS4 • XB1 • Switch • PC",
     tech: "Custom C++ Engine Architecture",
     img: "/assets/proj/nkr1.png"
   },
@@ -71,6 +79,7 @@ const PROJECTS = [
     title: "S.M.M. Power Rangers: Mega Battle",
     year: "2017",
     platforms: "Playstation 4 • XB1",
+    platforms_short: "PS4 • XB1",
     tech: "PlayStation Gnmx / DirectX Native API Port",
     img: "/assets/proj/powerrangers.png"
   },
@@ -79,6 +88,7 @@ const PROJECTS = [
     title: "Kilka: Card Gods",
     year: "2014",
     platforms: "PlayStation Vita • Android • iOS",
+    platforms_short: "PS Vita • Android • iOS",
     tech: "1st LatAm Studio Release on Sony Hardware",
     img: "/assets/proj/kiilka.png"
   },
@@ -87,6 +97,7 @@ const PROJECTS = [
     title: "Kizi Adventures",
     year: "2014",
     platforms: "Android • iOS",
+    platforms_short: "Android • iOS",
     tech: "Cross-Platform C++ Mobile Engine",
     img: "/assets/proj/kizi.png"
   }
@@ -122,6 +133,7 @@ function Panel({ children, className = '' }) {
 function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedProject, setSelectedProject] = useState(null);
+  const [appScale, setAppScale] = useState(1);
 
   const cubeRef = useRef(null);
   const carouselRef = useRef(null);
@@ -143,6 +155,35 @@ function App() {
     cubeLastY: 0,
     reduceMotion: false
   });
+
+  useEffect(() => {
+    let timeoutId = null;
+
+    const updateScale = () => {
+      // window.innerWidth lee el tamaño actual de la ventana del navegador, NO la resolución del monitor
+      const w = window.innerWidth;
+      if (w < 768) {
+        setAppScale(1); 
+      } else {
+        // setAppScale(Math.min(Math.max(w / 2400, 0.6), 1.5));
+        // Divisor 1536 para que 1920p sea exactamente 1.25, 
+        // limitando el crecimiento máximo a 2.0 (200% para 4K) y el mínimo a 0.8
+        setAppScale(Math.min(Math.max(w / 1536, 0.8), 2.0));
+      }
+    };
+    
+    const handleResize = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(updateScale, 100); // Optimizamos para que el cálculo ocurra solo al terminar de arrastrar la ventana
+    };
+
+    updateScale(); // Se ejecuta solo al inicio
+    window.addEventListener('resize', handleResize); // Se ejecuta al redimensionar la ventana
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(timeoutId);
+    };
+  }, []);
 
   useEffect(() => {
     const p = physics.current;
@@ -263,31 +304,39 @@ function App() {
   };
 
   const centerProject = (proj, index) => {
-    const el = carouselRef.current;
-    if (!el) return;
-    
-    // Obtener el elemento DOM correspondiente al índice exacto
-    const cardNode = el.children[index];
-    if (!cardNode) return;
+    setSelectedProject((cur) => {
+      // Si el proyecto ya estaba seleccionado (se está deseleccionando)
+      if (cur && cur.id === proj.id) {
+        physics.current.isPaused = false; 
+        // Quitar pausa
+        const isMobile = window.innerWidth < 768;
+        boostCarousel(isMobile ? 6.4 : 10);
+        physics.current.isPaused = true;
+        return null;
+      }
+      
+      // Si es un proyecto nuevo (se está seleccionando)
+      const el = carouselRef.current;
+      if (el) {
+        const cardNode = el.children[index];
+        if (cardNode) {
+          const containerWidth = el.clientWidth;
+          const cardLeft = cardNode.offsetLeft;
+          const cardWidth = cardNode.offsetWidth;
+          const targetScrollLeft = cardLeft - (containerWidth / 2) + (cardWidth / 2);
 
-    // Calcular la distancia necesaria para llevar el elemento al centro del contenedor
-    const containerWidth = el.clientWidth;
-    const cardLeft = cardNode.offsetLeft;
-    const cardWidth = cardNode.offsetWidth;
-    
-    const targetScrollLeft = cardLeft - (containerWidth / 2) + (cardWidth / 2);
+          physics.current.scrollPos = targetScrollLeft;
+          physics.current.carouselBoost = 0;
+          physics.current.isPaused = true;
 
-    // Actualizar la posición de física y hacer el scroll suave
-    physics.current.scrollPos = targetScrollLeft;
-    physics.current.carouselBoost = 0; // Detener cualquier impulso previo
-    physics.current.isPaused = true;  // Pausar el movimiento automático
-
-    el.scrollTo({
-      left: targetScrollLeft,
-      behavior: 'smooth'
+          el.scrollTo({
+            left: targetScrollLeft,
+            behavior: 'smooth'
+          });
+        }
+      }
+      return proj;
     });
-
-    setSelectedProject((cur) => (cur && cur.id === proj.id ? null : proj));
   };
 
   const infiniteProjects = [...PROJECTS, ...PROJECTS];
@@ -295,7 +344,16 @@ function App() {
   return (
     <div
       onWheel={handleWheel}
-      className="tron h-screen w-screen overflow-hidden bg-[#02050a] text-slate-100 flex flex-col select-none relative"
+      className="tron overflow-hidden bg-[#02050a] text-slate-100 flex flex-col select-none"
+      style={{ 
+        transform: `scale(${appScale})`,
+        transformOrigin: 'top left',
+        width: `${100 / appScale}%`,
+        height: `${100 / appScale}%`,
+        position: 'absolute',
+        top: 0,
+        left: 0
+      }}
     >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Roboto:wght@300;400&display=swap');
@@ -673,7 +731,7 @@ function App() {
                 }}
                 onFocus={() => { physics.current.isPaused = true; }}
                 onBlur={() => { physics.current.isPaused = false; }}
-                className={`group relative w-[280px] sm:w-[474px] h-[94px] sm:h-[160px] overflow-hidden bg-[#050d18] border transition-all duration-300 shrink-0 ${
+                className={`group relative flex flex-col w-[240px] sm:w-[380px] h-[110px] sm:h-[180px] overflow-hidden bg-[#050d18] border transition-all duration-300 shrink-0 ${
                   isSelected
                     ? 'border-orange-400 shadow-[0_0_22px_rgba(255,154,31,0.4)]'
                     : 'border-cyan-400/30 hover:border-cyan-300 hover:shadow-[0_0_20px_rgba(0,229,255,0.35)]'
@@ -682,33 +740,59 @@ function App() {
                   clipPath: 'polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px))'
                 }}
               >
-                <img
-                  src={proj.img}
-                  alt=""
-                  draggable="false"
-                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                  className="absolute inset-0 w-full h-full object-cover opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#02050a] via-[#02050a]/65 to-transparent" />
+                {/* Image and main info area */}
+                <div className="relative flex-1 w-full overflow-hidden">
+                  <img
+                    src={proj.img}
+                    alt=""
+                    draggable="false"
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    className="absolute inset-0 w-full h-full object-cover opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#02050a] via-[#02050a]/65 to-transparent" />
 
-                <div className="absolute inset-0 p-3.5 flex flex-col justify-between">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className={`orb px-2 py-0.5 text-[11px] font-bold border ${
-                      isSelected ? 'text-orange-200 border-orange-400/70 bg-orange-400/15' : 'text-cyan-200 border-cyan-300/50 bg-cyan-300/10'
-                    }`}>
-                      {proj.year}
-                    </span>
-                    <span className="text-xs text-slate-200 bg-black/60 px-2 py-0.5 text-right">{proj.platforms}</span>
-                  </div>
+                  <div className="absolute inset-0 px-2.5 pt-2.5 pb-1 sm:px-3.5 sm:pt-3.5 sm:pb-2 flex flex-col justify-between pointer-events-none">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className={`orb px-2 py-0.5 text-[8px] sm:text-[11px] font-bold border ${
+                        isSelected ? 'text-orange-200 border-orange-400/70 bg-orange-400/15' : 'text-cyan-200 border-cyan-300/50 bg-cyan-300/10'
+                      }`}>
+                        {proj.year}
+                      </span>
+                    </div>
 
-                  <div>
-                    <h3 className={`text-base font-bold leading-snug transition-colors ${
-                      isSelected ? 'text-orange-200' : 'text-white group-hover:text-cyan-200'
-                    }`}>
-                      {proj.title}
-                    </h3>
-                    <p className="text-sm text-slate-300 truncate mt-0.5">{proj.tech}</p>
+                    <div className="flex flex-col gap-0.5 sm:gap-1.5">
+                      <div>
+                        <h3 className={`text-[11px] sm:text-base font-bold leading-tight transition-colors ${
+                          isSelected ? 'text-orange-200' : 'text-white group-hover:text-cyan-200'
+                        }`}>
+                          {proj.title}
+                        </h3>
+                        <p className="text-[9px] sm:text-xs text-slate-300 truncate mt-0.5">{proj.tech}</p>
+                      </div>
+                    </div>
                   </div>
+                </div>
+                
+                {/* Black space at the bottom for platforms */}
+                <div className="h-[22px] sm:h-[26px] bg-black w-full flex items-center justify-start px-3 sm:px-3.5 shrink-0 z-10 border-t border-cyan-400/10">
+                  <span className="sm:hidden flex flex-nowrap gap-1">
+                    {proj.platforms_short.split(" • ").map((plat, idx) => (
+                      <span key={idx} className={`px-1 py-[3px] text-[6px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
+                        isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
+                      }`}>
+                        {plat}
+                      </span>
+                    ))}
+                  </span>
+                  <span className="hidden sm:flex flex-nowrap gap-1">
+                    {proj.platforms.split(" • ").map((plat, idx) => (
+                      <span key={idx} className={`px-1.5 py-[3px] text-[7px] sm:text-[8px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
+                        isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
+                      }`}>
+                        {plat}
+                      </span>
+                    ))}
+                  </span>
                 </div>
               </div>
             );
