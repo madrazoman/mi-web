@@ -310,7 +310,7 @@ function App() {
         physics.current.isPaused = false; 
         // Quitar pausa
         const isMobile = window.innerWidth < 768;
-        boostCarousel(isMobile ? 6.4 : 10);
+        boostCarousel(isMobile ? 10 : 10);
         physics.current.isPaused = true;
         return null;
       }
