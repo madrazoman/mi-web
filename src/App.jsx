@@ -88,7 +88,7 @@ const PROJECTS = [
     title: "Kilka: Card Gods",
     year: "2014",
     platforms: "PlayStation Vita • Android • iOS",
-    platforms_short: "PS Vita • Android • iOS",
+    platforms_short: "PS Vita • Mobile",
     tech: "1st LatAm Studio Release on Sony Hardware",
     img: "/assets/proj/kiilka.png"
   },
@@ -165,10 +165,7 @@ function App() {
       if (w < 768) {
         setAppScale(1); 
       } else {
-        // setAppScale(Math.min(Math.max(w / 2400, 0.6), 1.5));
-        // Divisor 1536 para que 1920p sea exactamente 1.25, 
-        // limitando el crecimiento máximo a 2.0 (200% para 4K) y el mínimo a 0.8
-        setAppScale(Math.min(Math.max(w / 1536, 0.8), 2.0));
+        setAppScale(Math.min(Math.max(w / 2400, 0.6), 1.5));
       }
     };
     
@@ -304,39 +301,31 @@ function App() {
   };
 
   const centerProject = (proj, index) => {
-    setSelectedProject((cur) => {
-      // Si el proyecto ya estaba seleccionado (se está deseleccionando)
-      if (cur && cur.id === proj.id) {
-        physics.current.isPaused = false; 
-        // Quitar pausa
-        const isMobile = window.innerWidth < 768;
-        boostCarousel(isMobile ? 10 : 10);
-        physics.current.isPaused = true;
-        return null;
-      }
-      
-      // Si es un proyecto nuevo (se está seleccionando)
-      const el = carouselRef.current;
-      if (el) {
-        const cardNode = el.children[index];
-        if (cardNode) {
-          const containerWidth = el.clientWidth;
-          const cardLeft = cardNode.offsetLeft;
-          const cardWidth = cardNode.offsetWidth;
-          const targetScrollLeft = cardLeft - (containerWidth / 2) + (cardWidth / 2);
+    const el = carouselRef.current;
+    if (!el) return;
+    
+    // Obtener el elemento DOM correspondiente al índice exacto
+    const cardNode = el.children[index];
+    if (!cardNode) return;
 
-          physics.current.scrollPos = targetScrollLeft;
-          physics.current.carouselBoost = 0;
-          physics.current.isPaused = true;
+    // Calcular la distancia necesaria para llevar el elemento al centro del contenedor
+    const containerWidth = el.clientWidth;
+    const cardLeft = cardNode.offsetLeft;
+    const cardWidth = cardNode.offsetWidth;
+    
+    const targetScrollLeft = cardLeft - (containerWidth / 2) + (cardWidth / 2);
 
-          el.scrollTo({
-            left: targetScrollLeft,
-            behavior: 'smooth'
-          });
-        }
-      }
-      return proj;
+    // Actualizar la posición de física y hacer el scroll suave
+    physics.current.scrollPos = targetScrollLeft;
+    physics.current.carouselBoost = 0; // Detener cualquier impulso previo
+    physics.current.isPaused = true;  // Pausar el movimiento automático
+
+    el.scrollTo({
+      left: targetScrollLeft,
+      behavior: 'smooth'
     });
+
+    setSelectedProject((cur) => (cur && cur.id === proj.id ? null : proj));
   };
 
   const infiniteProjects = [...PROJECTS, ...PROJECTS];
@@ -502,9 +491,9 @@ function App() {
       </header>
 
       {/* ==================== 2. CENTER: CUBE + CONSOLE ==================== */}
-      <main className="relative z-10 flex-1 min-h-0 flex items-center justify-center gap-10 xl:gap-16 px-6 md:px-14 py-4 max-w-7xl mx-auto w-full">
+      <main className="relative z-10 flex-1 min-h-0 flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-10 xl:gap-16 px-6 md:px-14 py-4 max-w-7xl mx-auto w-full">
         {/* Cube (hidden on small screens to give the card the room) */}
-        <div className="hidden lg:flex flex-col items-center shrink-0">
+        <div className="flex flex-col items-center shrink-0 scale-[0.65] md:scale-100 origin-bottom -mb-6 md:mb-0">
           <div
             className="cube-scene p-6"
             onPointerDown={onCubeDown}
