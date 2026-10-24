@@ -491,9 +491,9 @@ function App() {
       </header>
 
       {/* ==================== 2. CENTER: CUBE + CONSOLE ==================== */}
-      <main className="relative z-10 flex-1 min-h-0 flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-10 xl:gap-16 px-6 md:px-14 py-4 max-w-7xl mx-auto w-full">
+      <main className="relative z-10 flex-1 min-h-0 flex items-center justify-center gap-10 xl:gap-16 px-6 md:px-14 py-4 max-w-7xl mx-auto w-full">
         {/* Cube (hidden on small screens to give the card the room) */}
-        <div className="flex flex-col items-center shrink-0 scale-[0.65] md:scale-100 origin-bottom -mb-6 md:mb-0">
+        <div className="hidden lg:flex flex-col items-center shrink-0">
           <div
             className="cube-scene p-6"
             onPointerDown={onCubeDown}
@@ -661,10 +661,10 @@ function App() {
 
       {/* ==================== 3. DOCK: PROJECT CAROUSEL ==================== */}
       <section className="relative z-20 bg-[#030811]/95 border-t border-cyan-400/30 py-4 shrink-0 shadow-[0_-12px_32px_-14px_rgba(0,229,255,0.35)]">
-        <div className="px-6 md:px-12 mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-3 min-w-0">
-            <span className="w-2 h-2 bg-cyan-300 shadow-[0_0_10px_#00E5FF] shrink-0" />
-            <h2 className="orb tracking-wider text-xs font-bold uppercase text-slate-100">Shipped &amp; in production</h2>
+        <div className="px-6 md:px-12 mb-3 flex flex-nowrap sm:flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-nowrap items-center gap-2 sm:gap-3 min-w-0 shrink-0 sm:shrink">
+            <span className="hidden sm:inline-block w-2 h-2 bg-cyan-300 shadow-[0_0_10px_#00E5FF] shrink-0" />
+            <h2 className="orb tracking-wider text-[9px] sm:text-xs font-bold uppercase text-slate-100 whitespace-nowrap">Shipped &amp; in production</h2>
             {selectedProject && (
               <span className="hidden sm:inline-block text-sm text-orange-200 bg-orange-400/10 border border-orange-400/50 px-2.5 py-0.5 sm:max-w-[60ch] md:max-w-[85ch] lg:max-w-none">
                 {selectedProject.title} · {selectedProject.tech}
@@ -672,21 +672,23 @@ function App() {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <span className="hidden md:inline text-xs text-slate-400 mr-2">Wheel / drag / click to accelerate</span>
             <button
               onClick={() => boostCarousel(-25)}
-              className="orb tracking-wider px-3 py-1 text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition"
+              className="orb tracking-wider px-2 sm:px-3 py-1 text-[9px] sm:text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition whitespace-nowrap"
               aria-label="Accelerate carousel backward"
             >
-              ‹‹ REV
+              <span className="sm:hidden">REV</span>
+              <span className="hidden sm:inline">‹‹ REV</span>
             </button>
             <button
               onClick={() => boostCarousel(25)}
-              className="orb tracking-wider px-3 py-1 text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition"
+              className="orb tracking-wider px-2 sm:px-3 py-1 text-[9px] sm:text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition whitespace-nowrap"
               aria-label="Accelerate carousel forward"
             >
-              FWD ››
+              <span className="sm:hidden">FWD</span>
+              <span className="hidden sm:inline">FWD ››</span>
             </button>
           </div>
         </div>
