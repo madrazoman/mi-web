@@ -146,7 +146,7 @@ function App() {
     velRotX: 0,
     velRotY: 0,
     scrollPos: 0,
-    baseCarouselSpeed: 3.0, // .6, 1.35 Double speed for snappy automatic stepping
+    baseCarouselSpeed: 1.35, // Double speed for snappy automatic stepping
     carouselBoost: 0,
     isDragging: false,
     startX: 0,
@@ -160,7 +160,8 @@ function App() {
     cubeLastY: 0,
     reduceMotion: false,
     dragVelocity: 0,
-    dragTotal: 0
+    dragTotal: 0,
+    isInitialized: false
   });
 
   useEffect(() => {
@@ -226,9 +227,24 @@ function App() {
       // 2. Infinite Carousel + 1-Second Center Pause Stepper
       const el = carouselRef.current;
       if (el && el.children.length > PROJECTS.length) {
+        // Initialization: Center the first item of the SECOND set on load (to avoid negative scroll bounds)
+        if (!p.isInitialized && el.clientWidth > 0 && el.children[PROJECTS.length].offsetWidth > 0) {
+          const startIndex = PROJECTS.length;
+          const startCard = el.children[startIndex];
+          const target = startCard.offsetLeft - el.clientWidth / 2 + startCard.offsetWidth / 2;
+          
+          p.scrollPos = target;
+          el.scrollLeft = target;
+          p.pauseUntil = now + 2800; // Pause for 2.8 seconds at start
+          p.lastStoppedIndex = startIndex;
+          p.lastSelectedId = PROJECTS[0].id;
+          setSelectedProject(PROJECTS[0]);
+          p.isInitialized = true;
+        }
+
         const loop = el.children[PROJECTS.length].offsetLeft - el.children[0].offsetLeft;
 
-        // Check if 1-second center pause has finished
+        // Check if center pause has finished
         if (p.pauseUntil > 0 && now >= p.pauseUntil) {
           p.pauseUntil = 0;
           if (!p.isPaused && !p.isDragging) {
@@ -332,7 +348,7 @@ function App() {
           p.scrollPos = targetScrollLeft;
           el.scrollLeft = targetScrollLeft;
           p.carouselBoost = 0;
-          p.pauseUntil = now + 2800; // Pause for 1 second (1000ms)
+          p.pauseUntil = now + 2800; // Pause for 2.8 seconds (2800ms)
           p.lastStoppedIndex = closestIndex;
 
           const proj = INFINITE_PROJECTS[closestIndex];
@@ -535,7 +551,7 @@ function App() {
           p.scrollPos = targetScrollLeft;
           p.carouselBoost = 0;
           p.isPaused = false;
-          p.pauseUntil = performance.now() + 2500;
+          p.pauseUntil = performance.now() + 2800;
           p.lastStoppedIndex = index;
           p.lastSelectedId = proj.id;
 
