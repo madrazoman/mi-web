@@ -177,7 +177,8 @@ function App() {
         nextScale = Math.min(Math.max(h / 760, 0.45), 0.75);
       } else if (w < 768 && h > w) {
         // Mobile Portrait
-        nextScale = Math.min(Math.max(w / 480, 0.72), 0.92);
+        // nextScale = Math.min(Math.max(w / 480, 0.72), 0.92);
+        nextScale = Math.min(Math.max(w / 380, 0.85), 1.05);
       } else if (w < 400) {
         nextScale = Math.min(Math.max(w / 1200, 0.3), 1.5);
       } else if (w < 1000) {
