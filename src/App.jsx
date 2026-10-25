@@ -140,6 +140,7 @@ function App() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [isHeld, setIsHeld] = useState(false);
   const [appScale, setAppScale] = useState(1);
+  const [isAutoMode, setIsAutoMode] = useState(false);
 
   const appScaleRef = useRef(1);
   const cubeRef = useRef(null);
@@ -172,7 +173,8 @@ function App() {
     reduceMotion: false,
     dragVelocity: 0,
     dragTotal: 0,
-    isInitialized: false
+    isInitialized: false,
+    isAutoMode: false
   });
 
   const releaseHold = useCallback(() => {
@@ -181,6 +183,10 @@ function App() {
     p.holdUntil = 0;
     setIsHeld(false);
   }, []);
+  
+  useEffect(() => {
+    physics.current.isAutoMode = isAutoMode;
+  }, [isAutoMode]);
 
   useEffect(() => {
     let timeoutId = null;
@@ -247,7 +253,8 @@ function App() {
       // 2. Infinite carousel + centre-pause stepper
       const el = carouselRef.current;
       if (el && el.children.length > PROJECTS.length) {
-        // Initialization: centre the first item of the SECOND set on load (avoids negative scroll bounds)
+        // Initialization: start the carousel in the SECOND set (avoids negative scroll bounds)
+        // without auto-selecting or pausing it.
         if (!p.isInitialized && el.clientWidth > 0 && el.children[PROJECTS.length].offsetWidth > 0) {
           const startIndex = PROJECTS.length;
           const startCard = el.children[startIndex];
@@ -255,10 +262,6 @@ function App() {
 
           p.scrollPos = target;
           el.scrollLeft = target;
-          p.pauseUntil = now + AUTO_PAUSE_MS;
-          p.lastStoppedIndex = startIndex;
-          p.lastSelectedId = PROJECTS[0].id;
-          setSelectedProject(PROJECTS[0]);
           p.isInitialized = true;
         }
 
@@ -378,6 +381,7 @@ function App() {
             setSelectedProject(null);
           }
         } else if (
+          p.isAutoMode && // <--- ADDED isAutoMode check here
           !p.isDragging &&
           !p.isPaused &&
           !isAutoPaused &&
@@ -967,35 +971,10 @@ function App() {
       {/* ==================== 3. DOCK: PROJECT CAROUSEL ==================== */}
       <section
         aria-label="Shipped projects"
-        className="relative z-20 bg-[#030811]/95 border-t border-cyan-400/30 pt-3 pb-3 sm:py-4 shrink-0 shadow-[0_-12px_32px_-14px_rgba(0,229,255,0.35)]"
+        className="relative z-20 bg-[#030811]/95 border-t border-cyan-400/30 pt-2 pb-1.5 sm:py-4 shrink-0 shadow-[0_-12px_32px_-14px_rgba(0,229,255,0.35)]"
       >
         {/* The selected card grows upward (bottom stays anchored) and may rise above the dock */}
         <div className="carousel-wrap">
-          {/* Phone: edge arrows (hidden while a card is shown large, so they never cover it) */}
-          <button
-            type="button"
-            onClick={() => boostCarousel(-22)}
-            aria-label="Previous projects"
-            className={`sm:hidden absolute left-1.5 top-1/2 -translate-y-1/2 z-10 w-10 h-10 grid place-items-center rounded-full bg-[#02050a]/85 border border-cyan-400/60 text-cyan-200 shadow-[0_0_14px_rgba(0,229,255,0.35)] active:bg-cyan-300/25 transition-opacity duration-300 ${
-              selectedProject ? 'opacity-0 pointer-events-none' : 'opacity-100'
-            }`}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M15 5l-7 7 7 7" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => boostCarousel(22)}
-            aria-label="Next projects"
-            className={`sm:hidden absolute right-1.5 top-1/2 -translate-y-1/2 z-10 w-10 h-10 grid place-items-center rounded-full bg-[#02050a]/85 border border-cyan-400/60 text-cyan-200 shadow-[0_0_14px_rgba(0,229,255,0.35)] active:bg-cyan-300/25 transition-opacity duration-300 ${
-              selectedProject ? 'opacity-0 pointer-events-none' : 'opacity-100'
-            }`}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
 
           <div
             ref={carouselRef}
@@ -1041,7 +1020,7 @@ function App() {
                       draggable="false"
                       onError={(e) => { e.currentTarget.style.display = 'none'; }}
                       className={`carousel-card-img absolute inset-0 w-full h-full object-cover transition-transform duration-500 ${
-                        isSelected ? 'scale-110 !opacity-100' : 'group-hover:scale-105 group-hover:!opacity-100'
+                        isSelected ? 'scale-100 !opacity-100' : 'scale-110 group-hover:scale-105 group-hover:!opacity-100'
                       }`}
                       style={{ opacity: 0.35 }}
                     />
@@ -1054,8 +1033,7 @@ function App() {
                         }`}>
                           {proj.title}
                         </h3>
-                        {/* On phones the tech line lives in the readable detail line below the carousel */}
-                        <p className="hidden sm:block text-xs text-slate-200 truncate mt-1 [text-shadow:0_1px_5px_rgba(0,0,0,0.95)]">{proj.tech}</p>
+                        <p className="text-[9px] sm:text-xs text-slate-200 truncate mt-0.5 sm:mt-1 [text-shadow:0_1px_5px_rgba(0,0,0,0.95)]">{proj.tech}</p>
                       </div>
                     </div>
                   </div>
@@ -1096,33 +1074,13 @@ function App() {
           </div>
         </div>
 
-        {/* Phone: section label + readable details for the selected project */}
-        <div className="sm:hidden px-4 mt-2 min-h-[52px]">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="orb tracking-wider text-[10px] font-bold uppercase text-cyan-300/90 whitespace-nowrap">
-              Shipped &amp; in production
-            </h2>
-            {isHeld && (
-              <span className="orb tracking-wider text-[10px] uppercase text-orange-300 whitespace-nowrap">
-                ❚❚ Holding · tap to resume
-              </span>
-            )}
-          </div>
-          <p className={`mt-1 text-[13px] leading-snug clamp-2 transition-colors ${
-            selectedProject ? 'text-orange-200' : 'text-slate-400'
-          }`}>
-            {selectedProject ? selectedProject.tech : 'Tap a project to hold it · swipe to browse'}
-          </p>
-        </div>
-
-        {/* Tablet / desktop header row (now below the cards so the enlarged card never covers it) */}
+        {/* Tablet / desktop header row (omitted on mobile so the carousel sits directly above the license footer) */}
         <div className="hidden sm:flex px-6 md:px-12 mt-3 flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3 min-w-0 shrink">
             <span className="inline-block w-2 h-2 bg-cyan-300 shadow-[0_0_10px_#00E5FF] shrink-0" />
             <h2 className="orb tracking-wider text-xs font-bold uppercase text-slate-100 whitespace-nowrap">Shipped &amp; in production</h2>
             {selectedProject && (
               <span className="inline-block text-sm text-orange-200 bg-orange-400/10 border border-orange-400/50 px-2.5 py-0.5 sm:max-w-[60ch] md:max-w-[85ch] lg:max-w-none truncate">
-                {isHeld && <span className="mr-2 text-orange-300">❚❚</span>}
                 {selectedProject.title} · {selectedProject.tech}
               </span>
             )}
@@ -1138,6 +1096,17 @@ function App() {
               ‹‹ REV
             </button>
             <button
+              onClick={() => setIsAutoMode(!isAutoMode)}
+              className={`orb tracking-wider px-3 py-1.5 text-[11px] font-bold transition whitespace-nowrap border ${
+                isAutoMode 
+                  ? 'bg-orange-400/20 text-orange-200 border-orange-400/70 shadow-[0_0_10px_rgba(255,154,31,0.4)]' 
+                  : 'text-slate-200 border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200'
+              }`}
+              aria-label="Toggle Auto-Focus Mode"
+            >
+              AUTO
+            </button>
+            <button
               onClick={() => boostCarousel(22)}
               className="orb tracking-wider px-3 py-1.5 text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition whitespace-nowrap"
               aria-label="Accelerate carousel forward"
@@ -1149,9 +1118,14 @@ function App() {
       </section>
 
       {/* ==================== 4. FOOTER / LEGAL ==================== */}
-      <footer className="relative z-20 bg-[#030811] py-1.5 sm:py-3 text-center border-t border-cyan-400/10 shrink-0">
-        <p className="text-[10px] sm:text-[11px] text-slate-400/80 max-w-5xl mx-auto px-4 sm:px-6 leading-snug sm:leading-relaxed tracking-wide">
-          All contents, game titles, trade names and/or trade dress, trademarks, artwork, and associated imagery are trademarks and/or copyright material of their respective owners. All rights reserved.
+      <footer className="relative z-20 bg-[#030811] py-1 sm:py-1.5 text-center border-t border-cyan-400/10 shrink-0">
+        <p className="text-[7px] sm:text-[9.5px] text-slate-400/75 max-w-6xl mx-auto px-2 sm:px-6 leading-none tracking-wide whitespace-nowrap overflow-hidden text-ellipsis">
+          <span className="sm:hidden">
+            All game titles, trademarks &amp; artwork belong to their respective owners.
+          </span>
+          <span className="hidden sm:inline">
+            All game titles, trade names, trademarks, artwork, and associated imagery are copyright material of their respective owners. All rights reserved.
+          </span>
         </p>
       </footer>
 
