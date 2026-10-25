@@ -7,7 +7,7 @@ const PROJECTS = [
     title: "Warrior Cats: Clans of the Forest",
     year: "2026",
     platforms: "PlayStation 5 • Switch 2 • XBOX Series X|S • PC",
-    platforms_short: "PS5 • Switch 2 • XBOX • PC",
+    platforms_short: "PS5 • Switch • XBOX • PC",
     tech: "Unreal Engine / Handheld Optimization",
     img: "/assets/proj/warriorcats.png"
   },
@@ -196,7 +196,7 @@ function App() {
     p.reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let frame;
 
-    const tick = () => {
+        const tick = () => {
       // 3D cube: idle spin + momentum from wheel / drag
       if (!p.cubeDragging) {
         p.rotY += (p.reduceMotion ? 0 : 0.22) + p.velRotY;
@@ -208,20 +208,48 @@ function App() {
         cubeRef.current.style.transform = `rotateX(${p.rotX}deg) rotateY(${p.rotY}deg)`;
       }
 
-      // Infinite carousel: loop length is the exact distance between copy 1 and copy 2
       const el = carouselRef.current;
-      if (el && !p.isDragging && el.children.length > PROJECTS.length) {
-        // const speed = p.reduceMotion ? 0 : (p.isPaused ? 0.15 : p.baseCarouselSpeed);
-        // Force motion even on Save Energy Mode
-        const speed = p.isPaused ? 0.0 : p.baseCarouselSpeed;
-        p.scrollPos += speed + p.carouselBoost;
-        p.carouselBoost *= 0.95;
+      if (el) {
+        // Infinite carousel physics
+        if (!p.isDragging && el.children.length > PROJECTS.length) {
+          const speed = p.isPaused ? 0.0 : p.baseCarouselSpeed;
+          p.scrollPos += speed + p.carouselBoost;
+          p.carouselBoost *= 0.95;
 
-        const loop = el.children[PROJECTS.length].offsetLeft - el.children[0].offsetLeft;
-        if (loop > 0) {
-          if (p.scrollPos >= loop) p.scrollPos -= loop;
-          if (p.scrollPos < 0) p.scrollPos += loop;
-          el.scrollLeft = p.scrollPos;
+          const loop = el.children[PROJECTS.length].offsetLeft - el.children[0].offsetLeft;
+          if (loop > 0) {
+            if (p.scrollPos >= loop) p.scrollPos -= loop;
+            if (p.scrollPos < 0) p.scrollPos += loop;
+            el.scrollLeft = p.scrollPos;
+          }
+        }
+        
+        // Efecto de sombreado (tint) dinámico basado en la posición central
+        const containerCenter = el.clientWidth / 2;
+        // La distancia máxima para alcanzar el oscurecimiento total
+        const maxDist = el.clientWidth / 1.5; 
+        
+        for (let i = 0; i < el.children.length; i++) {
+          const card = el.children[i];
+          const img = card.querySelector('.carousel-card-img');
+          const isSelected = card.getAttribute('aria-pressed') === 'true';
+          
+          if (img) {
+            if (isSelected) {
+              img.style.opacity = '1';
+            } else {
+              const cardCenter = card.offsetLeft + card.offsetWidth / 2 - el.scrollLeft;
+              let dist = Math.abs(cardCenter - containerCenter);
+              
+              // ratio va de 0 (centro) a 1 (bordes)
+              let ratio = dist / maxDist;
+              ratio = Math.min(Math.max(ratio, 0), 1);
+              
+              // Opacidad final: 1 en el centro, baja hasta 0.35 en los bordes
+              const finalOpacity = 1 - (ratio * 0.65);
+              img.style.opacity = finalOpacity.toString();
+            }
+          }
         }
       }
 
@@ -354,31 +382,40 @@ function App() {
   };
 
   const centerProject = (proj, index) => {
-    const el = carouselRef.current;
-    if (!el) return;
-    
-    // Obtener el elemento DOM correspondiente al índice exacto
-    const cardNode = el.children[index];
-    if (!cardNode) return;
+    if (physics.current.dragTotal > 2) {
+      physics.current.dragTotal = 0;
+      return;
+    }
 
-    // Calcular la distancia necesaria para llevar el elemento al centro del contenedor
-    const containerWidth = el.clientWidth;
-    const cardLeft = cardNode.offsetLeft;
-    const cardWidth = cardNode.offsetWidth;
-    
-    const targetScrollLeft = cardLeft - (containerWidth / 2) + (cardWidth / 2);
+    setSelectedProject((cur) => {
+      if (cur && cur.id === proj.id) {
+        physics.current.isPaused = false;
+        const isMobile = window.innerWidth < 768;
+        boostCarousel(isMobile ? 12 : 18);
+        return null;
+      }
+      
+      const el = carouselRef.current;
+      if (el) {
+        const cardNode = el.children[index];
+        if (cardNode) {
+          const containerWidth = el.clientWidth;
+          const cardLeft = cardNode.offsetLeft;
+          const cardWidth = cardNode.offsetWidth;
+          const targetScrollLeft = cardLeft - (containerWidth / 2) + (cardWidth / 2);
 
-    // Actualizar la posición de física y hacer el scroll suave
-    physics.current.scrollPos = targetScrollLeft;
-    physics.current.carouselBoost = 0; // Detener cualquier impulso previo
-    physics.current.isPaused = true;  // Pausar el movimiento automático
+          physics.current.scrollPos = targetScrollLeft;
+          physics.current.carouselBoost = 0;
+          physics.current.isPaused = true;
 
-    el.scrollTo({
-      left: targetScrollLeft,
-      behavior: 'smooth'
+          el.scrollTo({
+            left: targetScrollLeft,
+            behavior: 'smooth'
+          });
+        }
+      }
+      return proj;
     });
-
-    setSelectedProject((cur) => (cur && cur.id === proj.id ? null : proj));
   };
 
   useEffect(() => {
@@ -797,9 +834,10 @@ function App() {
                     alt=""
                     draggable="false"
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                    className="absolute inset-0 w-full h-full object-cover opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500"
+                    className="carousel-card-img absolute inset-0 w-full h-full object-cover group-hover:!opacity-100 group-hover:scale-105 transition-transform duration-500"
+                    style={{ opacity: 0.35 }}
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#02050a] via-[#02050a]/65 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#02050a] via-[#02050a]/65 to-transparent pointer-events-none" />
 
                   <div className="absolute inset-0 px-2.5 pt-2.5 pb-1 sm:px-3.5 sm:pt-3.5 sm:pb-2 flex flex-col justify-end pointer-events-none">
                     <div className="flex flex-col min-w-0 pr-2">
@@ -813,7 +851,7 @@ function App() {
                   </div>
                 </div>
                 
-                {/* Black space at the bottom for platforms */}
+                {/* Black space at the bottom for platforms and year */}
                 <div className="h-[22px] sm:h-[26px] bg-black w-full flex items-center justify-between px-3 sm:px-3.5 shrink-0 z-10 border-t border-cyan-400/10">
                   <div className="flex items-center gap-1">
                     <span className="sm:hidden flex flex-nowrap gap-1">
