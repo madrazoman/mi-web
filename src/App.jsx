@@ -693,12 +693,20 @@ function App() {
         .carousel-card { --zoom: 1; transform: scale(var(--zoom)); transform-origin: 50% 100%; }
         .carousel-card.is-selected { --zoom: 1.28; z-index: 5; }
         .carousel-card:active { transform: scale(calc(var(--zoom) * 0.97)); }
+        /* Counter-scale the text so it keeps the same on-screen size while the card zooms */
+        .carousel-title, .carousel-bar-inner {
+          transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1), width 300ms cubic-bezier(0.4, 0, 0.2, 1), height 300ms cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .carousel-title { width: calc(100% * var(--zoom)); transform: scale(calc(1 / var(--zoom))); transform-origin: 0 100%; }
+        .carousel-bar { height: calc(30px / var(--zoom)); overflow: hidden; transition: height 300ms cubic-bezier(0.4, 0, 0.2, 1); }
+        .carousel-bar-inner { width: calc(100% * var(--zoom)); height: calc(100% * var(--zoom)); transform: scale(calc(1 / var(--zoom))); transform-origin: 0 0; }
         @media (min-width: 640px) {
           .carousel-wrap { height: 180px; }
           .carousel-track { top: -100px; padding-top: 100px; }
           .carousel-card.is-selected { --zoom: 1.4; }
+          .carousel-bar { height: calc(32px / var(--zoom)); }
         }
-        @media (prefers-reduced-motion: reduce) { .carousel-card { transition: none; } }
+        @media (prefers-reduced-motion: reduce) { .carousel-card, .carousel-title, .carousel-bar, .carousel-bar-inner { transition: none; } }
 
         .clamp-2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 
@@ -1037,29 +1045,24 @@ function App() {
                       }`}
                       style={{ opacity: 0.35 }}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#02050a] via-[#02050a]/70 to-transparent pointer-events-none" />
-
-                    {isSelected && isHeld && (
-                      <span className="absolute top-2 right-5 z-10 orb tracking-wider text-[9px] sm:text-[10px] text-orange-200 bg-black/70 border border-orange-400/60 px-1.5 py-0.5 pointer-events-none">
-                        ❚❚ HELD
-                      </span>
-                    )}
+                    <div className={`absolute inset-0 bg-gradient-to-t from-[#02050a] via-[#02050a]/70 to-transparent pointer-events-none transition-opacity duration-300 ${isSelected ? 'opacity-30' : 'opacity-100'}`} />
 
                     <div className="absolute inset-0 px-3 pt-3 pb-1.5 sm:px-4 sm:pt-4 sm:pb-2 flex flex-col justify-end pointer-events-none">
-                      <div className="flex flex-col min-w-0 pr-3">
-                        <h3 className={`text-sm sm:text-base font-bold leading-tight clamp-2 [text-shadow:0_1px_6px_rgba(0,0,0,0.9)] transition-colors ${
+                      <div className="carousel-title flex flex-col min-w-0 pr-3">
+                        <h3 className={`text-sm sm:text-base font-bold leading-tight clamp-2 [text-shadow:0_1px_6px_rgba(0,0,0,0.95),0_0_2px_rgba(0,0,0,0.8)] transition-colors ${
                           isSelected ? 'text-orange-200' : 'text-white group-hover:text-cyan-200'
                         }`}>
                           {proj.title}
                         </h3>
                         {/* On phones the tech line lives in the readable detail line below the carousel */}
-                        <p className="hidden sm:block text-xs text-slate-300 truncate mt-1">{proj.tech}</p>
+                        <p className="hidden sm:block text-xs text-slate-200 truncate mt-1 [text-shadow:0_1px_5px_rgba(0,0,0,0.95)]">{proj.tech}</p>
                       </div>
                     </div>
                   </div>
 
                   {/* Black bar at the bottom for platforms and year */}
-                  <div className="h-[30px] sm:h-[32px] bg-black w-full flex items-center justify-between px-3 sm:px-3.5 shrink-0 z-10 border-t border-cyan-400/10">
+                  <div className="carousel-bar bg-black w-full shrink-0 z-10 border-t border-cyan-400/10">
+                    <div className="carousel-bar-inner flex items-center justify-between px-3 sm:px-3.5">
                     <div className="flex items-center gap-1">
                       <span className="sm:hidden flex flex-nowrap gap-1">
                         {proj.platforms_short.split(' • ').map((plat, idx) => (
@@ -1085,6 +1088,7 @@ function App() {
                     }`}>
                       {proj.year}
                     </span>
+                    </div>
                   </div>
                 </div>
               );
