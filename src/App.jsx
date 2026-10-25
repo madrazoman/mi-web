@@ -103,6 +103,8 @@ const PROJECTS = [
   }
 ];
 
+const INFINITE_PROJECTS = [...PROJECTS, ...PROJECTS];
+
 const CUBE_FACES = [
   { cls: 'face-front', label: 'CORE', value: 'C++23' },
   { cls: 'face-back', label: 'ENGINE', value: 'UE 4/5' },
@@ -112,15 +114,12 @@ const CUBE_FACES = [
   { cls: 'face-bottom', label: 'CONSOLE', value: 'GNMX' }
 ];
 
-const INFINITE_PROJECTS = [...PROJECTS, ...PROJECTS];
-
 const TABS = [
   { id: 'overview', label: 'Profile' },
   { id: 'architecture', label: 'Architecture & R&D' },
   { id: 'academic', label: 'Waseda & Open Source' }
 ];
 
-// Neon palette: Tron cyan as the main light, Legacy orange as the single counter-accent.
 const CYAN = '#00E5FF';
 const ORANGE = '#FF9A1F';
 
@@ -137,6 +136,7 @@ function App() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [appScale, setAppScale] = useState(1);
 
+  const appScaleRef = useRef(1);
   const cubeRef = useRef(null);
   const carouselRef = useRef(null);
 
@@ -146,49 +146,58 @@ function App() {
     velRotX: 0,
     velRotY: 0,
     scrollPos: 0,
-    baseCarouselSpeed: 0.65,
+    baseCarouselSpeed: 3.0, // .6, 1.35 Double speed for snappy automatic stepping
     carouselBoost: 0,
     isDragging: false,
     startX: 0,
-    isPaused: false,
+    isPaused: false,         // True when user clicks a card to inspect it
+    pauseUntil: 0,           // Timestamp for the automatic 1-second center pause
+    lastStoppedIndex: -1,    // Prevents re-triggering pause on the exact same card
+    lastSelectedId: null,
     cubeDragging: false,
     cubeMoved: 0,
     cubeLastX: 0,
     cubeLastY: 0,
     reduceMotion: false,
     dragVelocity: 0,
-    dragTotal: 0,
-    lastSelectedId: null
+    dragTotal: 0
   });
 
   useEffect(() => {
     let timeoutId = null;
 
     const updateScale = () => {
-      // window.innerWidth lee el tamaño actual de la ventana del navegador, NO la resolución del monitor
       const w = window.innerWidth;
       const h = window.innerHeight;
-      if (w < 768 && h > w) {
-        // Reducimos la escala en móviles para que se vea más contenido (aprox 75% - 95%)
-        setAppScale(Math.min(Math.max(w / 450, 0.75), 0.95)); 
+      let nextScale = 1;
+
+      // Mobile Landscape (horizontal phone)
+      if (h < 520 && w > h) {
+        nextScale = Math.min(Math.max(h / 760, 0.45), 0.75);
+      } else if (w < 768 && h > w) {
+        // Mobile Portrait
+        nextScale = Math.min(Math.max(w / 480, 0.72), 0.92);
       } else if (w < 400) {
-        setAppScale(Math.min(Math.max(w / 1200, 0.3), 1.5));
+        nextScale = Math.min(Math.max(w / 1200, 0.3), 1.5);
       } else if (w < 1000) {
-        setAppScale(Math.min(Math.max(w / 1400, 0.4), 1.5));
+        nextScale = Math.min(Math.max(w / 1400, 0.4), 1.5);
       } else if (w < 1620) {
-        setAppScale(Math.min(Math.max(w / 1600, 0.55), 1.5));
+        nextScale = Math.min(Math.max(w / 1600, 0.55), 1.5);
       } else {
-        setAppScale(Math.min(Math.max(w / 1800, 0.8), 1.5));
+        nextScale = Math.min(Math.max(w / 1800, 0.8), 1.5);
       }
-    };
-    
-    const handleResize = () => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(updateScale, 100); // Optimizamos para que el cálculo ocurra solo al terminar de arrastrar la ventana
+
+      appScaleRef.current = nextScale;
+      setAppScale(nextScale);
     };
 
-    updateScale(); // Se ejecuta solo al inicio
-    window.addEventListener('resize', handleResize); // Se ejecuta al redimensionar la ventana
+    const handleResize = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(updateScale, 100);
+    };
+
+    updateScale();
+    window.addEventListener('resize', handleResize);
     return () => {
       window.removeEventListener('resize', handleResize);
       clearTimeout(timeoutId);
@@ -200,8 +209,10 @@ function App() {
     p.reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let frame;
 
-        const tick = () => {
-      // 3D cube: idle spin + momentum from wheel / drag
+    const tick = () => {
+      const now = performance.now();
+
+      // 1. 3D cube: idle spin + momentum from wheel / drag
       if (!p.cubeDragging) {
         p.rotY += (p.reduceMotion ? 0 : 0.22) + p.velRotY;
         p.rotX += (p.reduceMotion ? 0 : 0.06) + p.velRotX;
@@ -212,76 +223,122 @@ function App() {
         cubeRef.current.style.transform = `rotateX(${p.rotX}deg) rotateY(${p.rotY}deg)`;
       }
 
+      // 2. Infinite Carousel + 1-Second Center Pause Stepper
       const el = carouselRef.current;
-      if (el) {
-        // Infinite carousel physics
-        if (!p.isDragging && el.children.length > PROJECTS.length) {
-          const speed = p.isPaused ? 0.0 : p.baseCarouselSpeed;
-          p.scrollPos += speed + p.carouselBoost;
-          p.carouselBoost *= 0.95;
+      if (el && el.children.length > PROJECTS.length) {
+        const loop = el.children[PROJECTS.length].offsetLeft - el.children[0].offsetLeft;
 
-          const loop = el.children[PROJECTS.length].offsetLeft - el.children[0].offsetLeft;
+        // Check if 1-second center pause has finished
+        if (p.pauseUntil > 0 && now >= p.pauseUntil) {
+          p.pauseUntil = 0;
+          if (!p.isPaused && !p.isDragging) {
+            // Release selection so the card zooms back out as it leaves the center
+            if (p.lastSelectedId !== null) {
+              p.lastSelectedId = null;
+              setSelectedProject(null);
+            }
+          }
+        }
+
+        const isAutoPaused = p.pauseUntil > now;
+
+        if (!p.isDragging) {
+          const speed = (p.isPaused || isAutoPaused) ? 0.0 : p.baseCarouselSpeed;
+          p.scrollPos += speed + p.carouselBoost;
+          p.carouselBoost *= 0.92;
+          if (Math.abs(p.carouselBoost) < 0.05) p.carouselBoost = 0;
+
           if (loop > 0) {
-            if (p.scrollPos >= loop) p.scrollPos -= loop;
-            if (p.scrollPos < 0) p.scrollPos += loop;
+            if (p.scrollPos >= loop) {
+              p.scrollPos -= loop;
+              if (p.lastStoppedIndex >= PROJECTS.length) {
+                p.lastStoppedIndex -= PROJECTS.length;
+              }
+            }
+            if (p.scrollPos < 0) {
+              p.scrollPos += loop;
+              if (p.lastStoppedIndex >= 0 && p.lastStoppedIndex < PROJECTS.length) {
+                p.lastStoppedIndex += PROJECTS.length;
+              }
+            }
             el.scrollLeft = p.scrollPos;
           }
         }
-        
-        // Efecto de sombreado (tint) dinámico basado en la posición central
+
+        // 3. Dynamic opacity & closest-to-center detection
         const containerCenter = el.clientWidth / 2;
-        const maxDist = el.clientWidth / 1.5; 
-        
+        const maxDist = el.clientWidth / 1.5;
+
         let closestIndex = -1;
         let minDist = Infinity;
-        
+
         for (let i = 0; i < el.children.length; i++) {
           const card = el.children[i];
-          const img = card.querySelector('.carousel-card-img');
-          const isSelected = card.getAttribute('aria-pressed') === 'true';
-          
           const cardCenter = card.offsetLeft + card.offsetWidth / 2 - el.scrollLeft;
-          let dist = Math.abs(cardCenter - containerCenter);
-          
+          const dist = Math.abs(cardCenter - containerCenter);
+
           if (dist < minDist) {
             minDist = dist;
             closestIndex = i;
           }
-          
+
+          const img = card.querySelector('.carousel-card-img');
+          const isSelected = card.getAttribute('aria-pressed') === 'true';
+
           if (img) {
             if (isSelected) {
               img.style.opacity = '1';
             } else {
               let ratio = dist / maxDist;
               ratio = Math.min(Math.max(ratio, 0), 1);
-              const finalOpacity = 1 - (ratio * 0.65);
+              const finalOpacity = 1 - ratio * 0.65;
               img.style.opacity = finalOpacity.toString();
             }
           }
         }
 
-        // Lógica de auto-selección y deselección al hacer drag o coasting
+        // Clear lock on the previously stopped card once it moves away from center
+        if (p.lastStoppedIndex !== -1 && closestIndex !== -1) {
+          const stoppedCard = el.children[p.lastStoppedIndex];
+          if (stoppedCard) {
+            const stoppedCenter = stoppedCard.offsetLeft + stoppedCard.offsetWidth / 2 - el.scrollLeft;
+            if (Math.abs(stoppedCenter - containerCenter) > 45) {
+              p.lastStoppedIndex = -1;
+            }
+          }
+        }
+
+        // Deselect immediately when user drags or boosts rapidly
         const isActivelyDragging = p.isDragging && p.dragTotal > 2;
-        if (isActivelyDragging || Math.abs(p.carouselBoost) > 8) {
-          // Deseleccionar si se arrastra o si el carrusel va rápido
+        if (isActivelyDragging || Math.abs(p.carouselBoost) > 6) {
+          p.pauseUntil = 0;
           if (p.lastSelectedId !== null) {
             p.lastSelectedId = null;
             setSelectedProject(null);
           }
-        } else {
-          // Auto-seleccionar si va lento y hay una tarjeta en el centro
-          if (minDist < 60 && closestIndex !== -1) {
-            const proj = INFINITE_PROJECTS[closestIndex];
-            if (proj && p.lastSelectedId !== proj.id) {
-              p.lastSelectedId = proj.id;
-              setSelectedProject(proj);
-            }
-          } else if (!p.isPaused) {
-            // Deseleccionar si está en el "hueco" entre tarjetas y no está pausado
-            if (p.lastSelectedId !== null) {
-              p.lastSelectedId = null;
-              setSelectedProject(null);
-            }
+        } else if (
+          !p.isDragging &&
+          !p.isPaused &&
+          !isAutoPaused &&
+          Math.abs(p.carouselBoost) < 3.5 &&
+          closestIndex !== -1 &&
+          minDist <= 10 &&
+          p.lastStoppedIndex !== closestIndex
+        ) {
+          // Card reached the center: snap, select (zoom in), and pause for 1 second!
+          const cardNode = el.children[closestIndex];
+          const targetScrollLeft = cardNode.offsetLeft - containerCenter + cardNode.offsetWidth / 2;
+
+          p.scrollPos = targetScrollLeft;
+          el.scrollLeft = targetScrollLeft;
+          p.carouselBoost = 0;
+          p.pauseUntil = now + 2800; // Pause for 1 second (1000ms)
+          p.lastStoppedIndex = closestIndex;
+
+          const proj = INFINITE_PROJECTS[closestIndex];
+          if (proj && p.lastSelectedId !== proj.id) {
+            p.lastSelectedId = proj.id;
+            setSelectedProject(proj);
           }
         }
       }
@@ -298,97 +355,126 @@ function App() {
     const p = physics.current;
     p.velRotY += e.deltaY * 0.018;
     p.velRotX += e.deltaY * 0.008;
+    p.pauseUntil = 0;
+    p.isPaused = false;
     p.carouselBoost += e.deltaY * 0.06;
   };
 
   const boostCarousel = (amount) => {
-    physics.current.carouselBoost += amount;
-    physics.current.velRotY += amount * 0.10;
+    const p = physics.current;
+    p.pauseUntil = 0;
+    p.isPaused = false;
+    p.lastStoppedIndex = -1;
+    p.carouselBoost += amount;
+    p.velRotY += amount * 0.10;
   };
 
-  // Carousel: mouse drag
+  // Carousel: mouse drag (PC)
   const handleMouseDown = (e) => {
     const el = carouselRef.current;
     if (!el) return;
-    physics.current.isDragging = true;
-    physics.current.startX = e.pageX - el.offsetLeft;
+    const p = physics.current;
+    p.isDragging = true;
+    p.isPaused = false;
+    p.pauseUntil = 0;
+    p.carouselBoost = 0;
+    p.dragTotal = 0;
+    p.dragVelocity = 0;
+    p.lastStoppedIndex = -1;
+    p.startX = e.clientX / appScaleRef.current;
   };
+
   const handleMouseMove = (e) => {
     const p = physics.current;
     const el = carouselRef.current;
     if (!p.isDragging || !el) return;
     e.preventDefault();
-    const x = e.pageX - el.offsetLeft;
+    const x = e.clientX / appScaleRef.current;
     const dx = x - p.startX;
     p.dragTotal += Math.abs(dx);
-    
-    if (Math.abs(dx) > 0.5) {
-      p.dragVelocity = p.dragVelocity * 0.4 + dx * 0.6;
+
+    if (Math.abs(dx) > 0.2) {
+      p.dragVelocity = p.dragVelocity * 0.35 + dx * 0.65;
     }
-    
-    p.scrollPos -= dx * 1.5;
+
+    p.scrollPos -= dx * 1.35;
     p.startX = x;
+
+    const loop = el.children.length > PROJECTS.length
+      ? el.children[PROJECTS.length].offsetLeft - el.children[0].offsetLeft
+      : 0;
+    if (loop > 0) {
+      if (p.scrollPos >= loop) p.scrollPos -= loop;
+      if (p.scrollPos < 0) p.scrollPos += loop;
+    }
     el.scrollLeft = p.scrollPos;
   };
+
   const handleMouseUpOrLeave = () => {
     const p = physics.current;
     if (p.isDragging) {
-      // Al soltar el click, inyectamos la inercia (momentum) al carrusel
-      // Si dx es negativo (arrastre a la izquierda), queremos avanzar (boost positivo)
-      // Limitamos el boost máximo para que no salga volando si se arrastra muy rápido
-      const momentum = Math.min(Math.max(-p.dragVelocity * 1.5, -40), 40);
-      if (Math.abs(momentum) > 2) {
-        p.carouselBoost += momentum;
+      const momentum = Math.min(Math.max(-p.dragVelocity * 1.4, -35), 35);
+      if (Math.abs(momentum) > 1.5) {
+        p.carouselBoost = momentum;
       }
     }
     p.isDragging = false;
-    p.isPaused = false;
     p.dragVelocity = 0;
   };
 
-  // Carousel: native touch scrolling, then resume auto-scroll from where the finger left it
-    const handleTouchStart = (e) => { 
+  // Carousel: touch drag (Mobile)
+  const handleTouchStart = (e) => {
     const el = carouselRef.current;
-    if (!el) return;
-    physics.current.isDragging = true; 
-    physics.current.dragTotal = 0;
-    physics.current.startX = e.touches[0].pageX - el.offsetLeft;
+    if (!el || !e.touches[0]) return;
+    const p = physics.current;
+    p.isDragging = true;
+    p.isPaused = false;
+    p.pauseUntil = 0;
+    p.carouselBoost = 0;
+    p.dragTotal = 0;
+    p.dragVelocity = 0;
+    p.lastStoppedIndex = -1;
+    p.startX = e.touches[0].clientX / appScaleRef.current;
   };
 
   const handleTouchMove = (e) => {
     const p = physics.current;
     const el = carouselRef.current;
-    if (!p.isDragging || !el) return;
-    
-    const x = e.touches[0].pageX - el.offsetLeft;
+    if (!p.isDragging || !el || !e.touches[0]) return;
+
+    const x = e.touches[0].clientX / appScaleRef.current;
     const dx = x - p.startX;
     p.dragTotal += Math.abs(dx);
-    
-    // Suavizamos la velocidad para evitar que un micro-movimiento al soltar el dedo invierta la dirección
-    if (Math.abs(dx) > 0.5) {
-      p.dragVelocity = p.dragVelocity * 0.4 + dx * 0.6; 
+
+    if (Math.abs(dx) > 0.2) {
+      p.dragVelocity = p.dragVelocity * 0.35 + dx * 0.65;
     }
-    
-    // Multiplicamos por un factor que escale bien en móvil
-    p.scrollPos -= dx * 1.5; 
+
+    p.scrollPos -= dx * 1.35;
     p.startX = x;
+
+    const loop = el.children.length > PROJECTS.length
+      ? el.children[PROJECTS.length].offsetLeft - el.children[0].offsetLeft
+      : 0;
+    if (loop > 0) {
+      if (p.scrollPos >= loop) p.scrollPos -= loop;
+      if (p.scrollPos < 0) p.scrollPos += loop;
+    }
     el.scrollLeft = p.scrollPos;
   };
 
   const handleTouchEnd = () => {
     const p = physics.current;
     if (p.isDragging) {
-      // Si arrastró hacia la izquierda (dx negativo), queremos un boost positivo (hacia la derecha/adelante)
-      // Limitamos el impulso entre -40 y 40 para que no sea incontrolable
-      const momentum = Math.min(Math.max(-p.dragVelocity * 1.5, -40), 40);
-      if (Math.abs(momentum) > 2) {
-        boostCarousel(momentum);
+      const momentum = Math.min(Math.max(-p.dragVelocity * 1.5, -35), 35);
+      if (Math.abs(momentum) > 1.5) {
+        p.carouselBoost = momentum;
       }
     }
     p.isDragging = false;
-    p.isPaused = false;
     p.dragVelocity = 0;
   };
+
   // Cube: drag to spin, click (without dragging) to accelerate
   const onCubeDown = (e) => {
     const p = physics.current;
@@ -414,28 +500,29 @@ function App() {
   const onCubeUp = () => {
     const p = physics.current;
     p.cubeDragging = false;
-    if (p.cubeMoved < 4) boostCarousel(6);
-  };
-
-  const selectProject = (proj) => {
-    physics.current.isPaused = true; // <-- Pausa el carrusel al hacer clic
-    setSelectedProject((cur) => (cur && cur.id === proj.id ? null : proj));
+    if (p.cubeMoved < 4) boostCarousel(14);
   };
 
   const centerProject = (proj, index) => {
-    if (physics.current.dragTotal > 2) {
+    // Ignore click if user was dragging
+    if (physics.current.dragTotal > 4) {
       physics.current.dragTotal = 0;
       return;
     }
 
+    const p = physics.current;
     setSelectedProject((cur) => {
-      if (cur && cur.id === proj.id) {
-        physics.current.isPaused = false;
+      // Deselecting an already-selected card advances smoothly
+      if (cur && cur.id === proj.id && p.isPaused) {
+        p.isPaused = false;
+        p.pauseUntil = 0;
+        p.lastSelectedId = null;
         const isMobile = window.innerWidth < 768;
         boostCarousel(isMobile ? 12 : 18);
         return null;
       }
-      
+
+      // Selecting a card centers it and holds it for 2.5 seconds before auto-resuming
       const el = carouselRef.current;
       if (el) {
         const cardNode = el.children[index];
@@ -443,11 +530,14 @@ function App() {
           const containerWidth = el.clientWidth;
           const cardLeft = cardNode.offsetLeft;
           const cardWidth = cardNode.offsetWidth;
-          const targetScrollLeft = cardLeft - (containerWidth / 2) + (cardWidth / 2);
+          const targetScrollLeft = cardLeft - containerWidth / 2 + cardWidth / 2;
 
-          physics.current.scrollPos = targetScrollLeft;
-          physics.current.carouselBoost = 0;
-          physics.current.isPaused = true;
+          p.scrollPos = targetScrollLeft;
+          p.carouselBoost = 0;
+          p.isPaused = false;
+          p.pauseUntil = performance.now() + 2500;
+          p.lastStoppedIndex = index;
+          p.lastSelectedId = proj.id;
 
           el.scrollTo({
             left: targetScrollLeft,
@@ -460,18 +550,15 @@ function App() {
   };
 
   useEffect(() => {
-    // Al cambiar de pestaña, hacer scroll al inicio del panel de texto
     const panel = document.querySelector('.tron-panel-inner');
     if (panel) panel.scrollTo({ top: 0, behavior: 'smooth' });
   }, [activeTab]);
-
-  
 
   return (
     <div
       onWheel={handleWheel}
       className="tron overflow-hidden bg-[#02050a] text-slate-100 flex flex-col select-none"
-      style={{ 
+      style={{
         transform: `scale(${appScale})`,
         transformOrigin: 'top left',
         width: `${100 / appScale}%`,
@@ -485,7 +572,7 @@ function App() {
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Roboto:wght@300;400&display=swap');
 
         html, body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-        .tron { font-family: \'Inter\', \'Roboto\', system-ui, -apple-system, \'Segoe UI\', sans-serif; font-weight: 400; -webkit-text-size-adjust: 100%; }
+        .tron { font-family: 'Inter', 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif; font-weight: 400; -webkit-text-size-adjust: 100%; }
         .orb  { font-family: 'Inter', 'Roboto', system-ui, sans-serif; font-weight: 700; }
         .light-copy { font-family: 'Roboto', 'Inter', system-ui, sans-serif; font-weight: 300; }
 
@@ -571,7 +658,7 @@ function App() {
       />
       <div className="horizon" />
       <div className="grid-floor" />
-      
+
       <Analytics />
 
       {/* ==================== 1. TOP BAR ==================== */}
@@ -686,7 +773,7 @@ function App() {
 
                   <p className="light-copy mt-4 text-base md:text-[17px] text-slate-200 leading-relaxed">
                     14+ years architecting, modernizing, and profiling multi-million-line C++ codebases across Windows
-                   (Steam, Epic, MS), PlayStation 5/4/Vita, XBOX Series X|S, Nintendo Switch 1 &amp; 2, and Mobile. Specialized
+                    (Steam, Epic, MS), PlayStation 5/4/Vita, XBOX Series X|S, Nintendo Switch 1 &amp; 2, and Mobile. Specialized
                     in CPU/GPU bottleneck mitigation, custom rendering pipelines, and zero-defect hardware compliance.
                   </p>
 
@@ -798,13 +885,13 @@ function App() {
       </main>
 
       {/* ==================== 3. DOCK: PROJECT CAROUSEL ==================== */}
-      <section className="relative z-20 bg-[#030811]/95 border-t border-cyan-400/30 py-4 shrink-0 shadow-[0_-12px_32px_-14px_rgba(0,229,255,0.35)]">
-        <div className="px-6 md:px-12 mb-3 flex flex-nowrap sm:flex-wrap items-center justify-between gap-2">
+      <section className="relative z-20 bg-[#030811]/95 border-t border-cyan-400/30 py-3 sm:py-4 shrink-0 shadow-[0_-12px_32px_-14px_rgba(0,229,255,0.35)]">
+        <div className="px-6 md:px-12 mb-2.5 sm:mb-3 flex flex-nowrap sm:flex-wrap items-center justify-between gap-2">
           <div className="flex flex-nowrap items-center gap-2 sm:gap-3 min-w-0 shrink-0 sm:shrink">
             <span className="hidden sm:inline-block w-2 h-2 bg-cyan-300 shadow-[0_0_10px_#00E5FF] shrink-0" />
             <h2 className="orb tracking-wider text-[9px] sm:text-xs font-bold uppercase text-slate-100 whitespace-nowrap">Shipped &amp; in production</h2>
             {selectedProject && (
-              <span className="hidden sm:inline-block text-sm text-orange-200 bg-orange-400/10 border border-orange-400/50 px-2.5 py-0.5 sm:max-w-[60ch] md:max-w-[85ch] lg:max-w-none">
+              <span className="hidden sm:inline-block text-sm text-orange-200 bg-orange-400/10 border border-orange-400/50 px-2.5 py-0.5 sm:max-w-[60ch] md:max-w-[85ch] lg:max-w-none truncate">
                 {selectedProject.title} · {selectedProject.tech}
               </span>
             )}
@@ -813,7 +900,7 @@ function App() {
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <span className="hidden md:inline text-xs text-slate-400 mr-2">Wheel / drag / click to accelerate</span>
             <button
-              onClick={() => boostCarousel(-25)}
+              onClick={() => boostCarousel(-22)}
               className="orb tracking-wider px-2 sm:px-3 py-1 text-[9px] sm:text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition whitespace-nowrap"
               aria-label="Accelerate carousel backward"
             >
@@ -821,7 +908,7 @@ function App() {
               <span className="hidden sm:inline">‹‹ REV</span>
             </button>
             <button
-              onClick={() => boostCarousel(25)}
+              onClick={() => boostCarousel(22)}
               className="orb tracking-wider px-2 sm:px-3 py-1 text-[9px] sm:text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition whitespace-nowrap"
               aria-label="Accelerate carousel forward"
             >
@@ -836,10 +923,8 @@ function App() {
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUpOrLeave}
           onMouseLeave={handleMouseUpOrLeave}
-          // Usar onPointerEnter para detectar si es realmente un mouse
-          onPointerEnter={(e) => { if (e.pointerType === 'mouse') physics.current.isPaused = true; }}
-          onPointerLeave={() => { physics.current.isPaused = false; }}
           onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
           onTouchCancel={handleTouchEnd}
           className="relative flex overflow-hidden no-scrollbar gap-4 px-6 cursor-grab active:cursor-grabbing touch-pan-y"
@@ -854,12 +939,13 @@ function App() {
                 tabIndex={isCopy ? -1 : 0}
                 aria-hidden={isCopy ? 'true' : undefined}
                 aria-pressed={isSelected ? 'true' : 'false'}
-                onClick={() => centerProject(proj, index)} // <-- AQUÍ USAMOS LA NUEVA FUNCIÓN
+                onClick={() => centerProject(proj, index)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); centerProject(proj, index); }
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    centerProject(proj, index);
+                  }
                 }}
-                onFocus={() => { physics.current.isPaused = true; }}
-                onBlur={() => { physics.current.isPaused = false; }}
                 className={`group relative flex flex-col w-[240px] sm:w-[380px] h-[110px] sm:h-[180px] overflow-hidden bg-[#050d18] border transition-all duration-300 shrink-0 ${
                   isSelected
                     ? 'border-orange-400 shadow-[0_0_22px_rgba(255,154,31,0.4)]'
@@ -876,7 +962,9 @@ function App() {
                     alt=""
                     draggable="false"
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                    className="carousel-card-img absolute inset-0 w-full h-full object-cover group-hover:!opacity-100 group-hover:scale-105 transition-transform duration-500"
+                    className={`carousel-card-img absolute inset-0 w-full h-full object-cover transition-transform duration-500 ${
+                      isSelected ? 'scale-110 !opacity-100' : 'group-hover:scale-105 group-hover:!opacity-100'
+                    }`}
                     style={{ opacity: 0.35 }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#02050a] via-[#02050a]/65 to-transparent pointer-events-none" />
@@ -892,7 +980,7 @@ function App() {
                     </div>
                   </div>
                 </div>
-                
+
                 {/* Black space at the bottom for platforms and year */}
                 <div className="h-[22px] sm:h-[26px] bg-black w-full flex items-center justify-between px-3 sm:px-3.5 shrink-0 z-10 border-t border-cyan-400/10">
                   <div className="flex items-center gap-1">
@@ -928,8 +1016,8 @@ function App() {
       </section>
 
       {/* ==================== 4. FOOTER / LEGAL ==================== */}
-      <footer className="relative z-20 bg-[#030811] py-3 text-center border-t border-cyan-400/10 shrink-0">
-        <p className="text-[9px] sm:text-[10px] text-slate-500/60 max-w-5xl mx-auto px-6 leading-relaxed tracking-wide">
+      <footer className="relative z-20 bg-[#030811] py-2 sm:py-3 text-center border-t border-cyan-400/10 shrink-0">
+        <p className="text-[8px] sm:text-[10px] text-slate-500/60 max-w-5xl mx-auto px-6 leading-relaxed tracking-wide">
           All contents, game titles, trade names and/or trade dress, trademarks, artwork, and associated imagery are trademarks and/or copyright material of their respective owners. All rights reserved.
         </p>
       </footer>
