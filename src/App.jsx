@@ -88,7 +88,7 @@ const PROJECTS = [
     title: "Kilka: Card Gods",
     year: "2014",
     platforms: "PlayStation Vita • Android • iOS",
-    platforms_short: "PS Vita • Mobile",
+    platforms_short: "PS Vita • Android • iOS",
     tech: "1st LatAm Studio Release on Sony Hardware",
     img: "/assets/proj/kiilka.png"
   },
@@ -162,10 +162,29 @@ function App() {
     const updateScale = () => {
       // window.innerWidth lee el tamaño actual de la ventana del navegador, NO la resolución del monitor
       const w = window.innerWidth;
-      if (w < 768) {
+      const h = window.innerHeight;
+      if (w < 768 && h > w) {
         setAppScale(1); 
+      } else if (w < 400) {
+        //setAppScale(Math.min(Math.max(w / 2200, 0.8), 1.5));
+        // setAppScale(Math.min(Math.max(w / 2000, 0.08), 1.5));
+        //setAppScale(Math.min(Math.max(w / 900, 0.55), 1.0));
+        // setAppScale(0.2); 
+
+        setAppScale(Math.min(Math.max(w / 1200, 0.3), 1.5));
+      } else if (w < 1000) {
+        //setAppScale(Math.min(Math.max(w / 2200, 0.8), 1.5));
+        // setAppScale(Math.min(Math.max(w / 2000, 0.08), 1.5));
+        setAppScale(Math.min(Math.max(w / 1400, 0.4), 1.5));
+      } else if (w < 1620) {
+        //setAppScale(Math.min(Math.max(w / 2200, 0.8), 1.5));
+        // setAppScale(Math.min(Math.max(w / 2000, 0.08), 1.5));
+        setAppScale(Math.min(Math.max(w / 1600, 0.55), 1.5));
       } else {
-        setAppScale(Math.min(Math.max(w / 2400, 0.6), 1.5));
+        // setAppScale(Math.min(Math.max(w / 2400, 0.6), 1.5));
+
+        //setAppScale(Math.min(Math.max(w / 2000, 1.2), 2.0));
+        setAppScale(Math.min(Math.max(w / 1800, 0.8), 1.5));
       }
     };
     
