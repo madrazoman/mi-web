@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 
 const PROJECTS = [
@@ -115,13 +115,17 @@ const CUBE_FACES = [
 ];
 
 const TABS = [
-  { id: 'overview', label: 'Profile' },
-  { id: 'architecture', label: 'Architecture & R&D' },
-  { id: 'academic', label: 'Waseda & Open Source' }
+  { id: 'overview', label: 'Profile', short: 'Profile' },
+  { id: 'architecture', label: 'Architecture & R&D', short: 'Architecture' },
+  { id: 'academic', label: 'Waseda & Open Source', short: 'Academic' }
 ];
 
 const CYAN = '#00E5FF';
 const ORANGE = '#FF9A1F';
+
+const HOLD_MS = 8000;        // how long a tapped / clicked card stays held
+const AUTO_PAUSE_MS = 2800;  // automatic pause when a card reaches the centre
+const TAP_SLOP = 8;          // px of travel that still counts as a tap, not a drag
 
 function Panel({ children, className = '' }) {
   return (
@@ -134,6 +138,7 @@ function Panel({ children, className = '' }) {
 function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedProject, setSelectedProject] = useState(null);
+  const [isHeld, setIsHeld] = useState(false);
   const [appScale, setAppScale] = useState(1);
 
   const appScaleRef = useRef(1);
@@ -146,13 +151,19 @@ function App() {
     velRotX: 0,
     velRotY: 0,
     scrollPos: 0,
-    baseCarouselSpeed: 1.35, // Double speed for snappy automatic stepping
+    baseCarouselSpeed: 1.35, // Snappy automatic stepping
     carouselBoost: 0,
-    isDragging: false,
+    targetScroll: null,      // When set, the carousel glides to this scroll position
+    isDragging: false,       // Pointer is down on the carousel
+    dragActive: false,       // ...and has travelled far enough to count as a drag (not a tap)
+    dragGain: 1,             // 1:1 for touch / pen, a bit faster for mouse
+    downX: 0,
     startX: 0,
-    isPaused: false,         // True when user clicks a card to inspect it
-    pauseUntil: 0,           // Timestamp for the automatic 1-second center pause
-    lastStoppedIndex: -1,    // Prevents re-triggering pause on the exact same card
+    lastMoveTime: 0,
+    isPaused: false,         // True while the user is "holding" a card (tap / click)
+    holdUntil: 0,            // Timestamp when a held card is released automatically
+    pauseUntil: 0,           // Timestamp for the automatic pause when a card reaches the centre
+    lastStoppedIndex: -1,    // Prevents re-triggering the pause on the exact same card
     lastSelectedId: null,
     cubeDragging: false,
     cubeMoved: 0,
@@ -164,6 +175,13 @@ function App() {
     isInitialized: false
   });
 
+  const releaseHold = useCallback(() => {
+    const p = physics.current;
+    p.isPaused = false;
+    p.holdUntil = 0;
+    setIsHeld(false);
+  }, []);
+
   useEffect(() => {
     let timeoutId = null;
 
@@ -172,15 +190,16 @@ function App() {
       const h = window.innerHeight;
       let nextScale = 1;
 
-      // Mobile Landscape (horizontal phone)
       if (h < 520 && w > h) {
+        // Phone in landscape
         nextScale = Math.min(Math.max(h / 760, 0.45), 0.75);
       } else if (w < 768 && h > w) {
-        // Mobile Portrait
-        // nextScale = Math.min(Math.max(w / 480, 0.72), 0.92);
-        nextScale = Math.min(Math.max(w / 380, 0.85), 1.05);
-      } else if (w < 400) {
-        nextScale = Math.min(Math.max(w / 1200, 0.3), 1.5);
+        // Phone in portrait: the layout is designed for ~360 CSS px of width.
+        // Never shrink it (text stays readable) and grow it slightly on bigger phones.
+        nextScale = Math.min(Math.max(w / 360, 0.88), 1.12);
+      } else if (w < 1000 && h > w) {
+        // Tablet in portrait
+        nextScale = Math.min(Math.max(w / 760, 0.9), 1.3);
       } else if (w < 1000) {
         nextScale = Math.min(Math.max(w / 1400, 0.4), 1.5);
       } else if (w < 1620) {
@@ -225,18 +244,18 @@ function App() {
         cubeRef.current.style.transform = `rotateX(${p.rotX}deg) rotateY(${p.rotY}deg)`;
       }
 
-      // 2. Infinite Carousel + 1-Second Center Pause Stepper
+      // 2. Infinite carousel + centre-pause stepper
       const el = carouselRef.current;
       if (el && el.children.length > PROJECTS.length) {
-        // Initialization: Center the first item of the SECOND set on load (to avoid negative scroll bounds)
+        // Initialization: centre the first item of the SECOND set on load (avoids negative scroll bounds)
         if (!p.isInitialized && el.clientWidth > 0 && el.children[PROJECTS.length].offsetWidth > 0) {
           const startIndex = PROJECTS.length;
           const startCard = el.children[startIndex];
           const target = startCard.offsetLeft - el.clientWidth / 2 + startCard.offsetWidth / 2;
-          
+
           p.scrollPos = target;
           el.scrollLeft = target;
-          p.pauseUntil = now + 2800; // Pause for 2.8 seconds at start
+          p.pauseUntil = now + AUTO_PAUSE_MS;
           p.lastStoppedIndex = startIndex;
           p.lastSelectedId = PROJECTS[0].id;
           setSelectedProject(PROJECTS[0]);
@@ -245,11 +264,11 @@ function App() {
 
         const loop = el.children[PROJECTS.length].offsetLeft - el.children[0].offsetLeft;
 
-        // Check if center pause has finished
+        // Has the automatic centre pause finished?
         if (p.pauseUntil > 0 && now >= p.pauseUntil) {
           p.pauseUntil = 0;
           if (!p.isPaused && !p.isDragging) {
-            // Release selection so the card zooms back out as it leaves the center
+            // Release selection so the card zooms back out as it leaves the centre
             if (p.lastSelectedId !== null) {
               p.lastSelectedId = null;
               setSelectedProject(null);
@@ -260,7 +279,21 @@ function App() {
         const isAutoPaused = p.pauseUntil > now;
 
         if (!p.isDragging) {
-          const speed = (p.isPaused || isAutoPaused) ? 0.0 : p.baseCarouselSpeed;
+          // Glide a tapped card to the centre (shortest way round the loop)
+          if (p.targetScroll !== null && loop > 0) {
+            let diff = (((p.targetScroll - p.scrollPos) % loop) + loop) % loop;
+            if (diff > loop / 2) diff -= loop;
+            if (Math.abs(diff) < 0.6) {
+              p.scrollPos += diff;
+              p.targetScroll = null;
+            } else {
+              p.scrollPos += diff * 0.2;
+            }
+          }
+
+          // Users who prefer reduced motion get no auto-advance (they can still drag / use the arrows)
+          const stopped = p.isPaused || isAutoPaused || p.reduceMotion;
+          const speed = stopped ? 0.0 : p.baseCarouselSpeed;
           p.scrollPos += speed + p.carouselBoost;
           p.carouselBoost *= 0.92;
           if (Math.abs(p.carouselBoost) < 0.05) p.carouselBoost = 0;
@@ -282,7 +315,7 @@ function App() {
           }
         }
 
-        // 3. Dynamic opacity & closest-to-center detection
+        // 3. Dynamic opacity & closest-to-centre detection
         const containerCenter = el.clientWidth / 2;
         const maxDist = el.clientWidth / 1.5;
 
@@ -314,8 +347,19 @@ function App() {
           }
         }
 
-        // Clear lock on the previously stopped card once it moves away from center
-        if (p.lastStoppedIndex !== -1 && closestIndex !== -1) {
+        // A held card times out: let it go, and don't re-trigger the auto pause on it
+        if (p.isPaused && !p.isDragging && now >= p.holdUntil) {
+          releaseHold();
+          p.pauseUntil = 0;
+          if (closestIndex !== -1 && minDist <= 45) p.lastStoppedIndex = closestIndex;
+          if (p.lastSelectedId !== null) {
+            p.lastSelectedId = null;
+            setSelectedProject(null);
+          }
+        }
+
+        // Clear the lock on the previously stopped card once it moves away from the centre
+        if (!p.isPaused && p.lastStoppedIndex !== -1 && closestIndex !== -1) {
           const stoppedCard = el.children[p.lastStoppedIndex];
           if (stoppedCard) {
             const stoppedCenter = stoppedCard.offsetLeft + stoppedCard.offsetWidth / 2 - el.scrollLeft;
@@ -325,8 +369,8 @@ function App() {
           }
         }
 
-        // Deselect immediately when user drags or boosts rapidly
-        const isActivelyDragging = p.isDragging && p.dragTotal > 2;
+        // Deselect immediately when the user drags or boosts rapidly
+        const isActivelyDragging = p.isDragging && p.dragActive;
         if (isActivelyDragging || Math.abs(p.carouselBoost) > 6) {
           p.pauseUntil = 0;
           if (p.lastSelectedId !== null) {
@@ -340,16 +384,17 @@ function App() {
           Math.abs(p.carouselBoost) < 3.5 &&
           closestIndex !== -1 &&
           minDist <= 10 &&
-          p.lastStoppedIndex !== closestIndex
+          p.lastStoppedIndex !== closestIndex &&
+          !p.reduceMotion
         ) {
-          // Card reached the center: snap, select (zoom in), and pause for 1 second!
+          // A card reached the centre: snap, select (zoom in) and pause
           const cardNode = el.children[closestIndex];
           const targetScrollLeft = cardNode.offsetLeft - containerCenter + cardNode.offsetWidth / 2;
 
           p.scrollPos = targetScrollLeft;
           el.scrollLeft = targetScrollLeft;
           p.carouselBoost = 0;
-          p.pauseUntil = now + 2800; // Pause for 2.8 seconds (2800ms)
+          p.pauseUntil = now + AUTO_PAUSE_MS;
           p.lastStoppedIndex = closestIndex;
 
           const proj = INFINITE_PROJECTS[closestIndex];
@@ -365,57 +410,81 @@ function App() {
 
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [releaseHold]);
 
   /* ---------- input handlers ---------- */
   const handleWheel = (e) => {
+    // Let the content panel scroll normally instead of spinning the cube
+    const panel = e.target && e.target.closest ? e.target.closest('.tron-panel-inner') : null;
+    if (panel && panel.scrollHeight > panel.clientHeight + 1) return;
+
     const p = physics.current;
     p.velRotY += e.deltaY * 0.018;
     p.velRotX += e.deltaY * 0.008;
     p.pauseUntil = 0;
-    p.isPaused = false;
+    p.targetScroll = null;
+    releaseHold();
     p.carouselBoost += e.deltaY * 0.06;
   };
 
   const boostCarousel = (amount) => {
     const p = physics.current;
     p.pauseUntil = 0;
-    p.isPaused = false;
+    p.targetScroll = null;
+    releaseHold();
     p.lastStoppedIndex = -1;
     p.carouselBoost += amount;
     p.velRotY += amount * 0.10;
   };
 
-  // Carousel: mouse drag (PC)
-  const handleMouseDown = (e) => {
+  // Carousel: one pointer pipeline for mouse, touch and pen
+  const onCarouselDown = (e) => {
     const el = carouselRef.current;
-    if (!el) return;
+    if (!el || (e.pointerType === 'mouse' && e.button !== 0)) return;
     const p = physics.current;
+    const x = e.clientX / appScaleRef.current;
     p.isDragging = true;
-    p.isPaused = false;
-    p.pauseUntil = 0;
-    p.carouselBoost = 0;
+    p.dragActive = false;
+    p.dragGain = e.pointerType === 'mouse' ? 1.35 : 1; // fingers track 1:1
+    p.downX = x;
+    p.startX = x;
     p.dragTotal = 0;
     p.dragVelocity = 0;
-    p.lastStoppedIndex = -1;
-    p.startX = e.clientX / appScaleRef.current;
+    p.lastMoveTime = e.timeStamp;
+    p.carouselBoost = 0; // grabbing the carousel stops any momentum
+    p.targetScroll = null;
   };
 
-  const handleMouseMove = (e) => {
+  const onCarouselMove = (e) => {
     const p = physics.current;
     const el = carouselRef.current;
     if (!p.isDragging || !el) return;
-    e.preventDefault();
+
     const x = e.clientX / appScaleRef.current;
     const dx = x - p.startX;
-    p.dragTotal += Math.abs(dx);
+    p.startX = x;
+    p.dragTotal = Math.max(p.dragTotal, Math.abs(x - p.downX));
 
-    if (Math.abs(dx) > 0.2) {
-      p.dragVelocity = p.dragVelocity * 0.35 + dx * 0.65;
+    if (!p.dragActive) {
+      if (p.dragTotal < TAP_SLOP) return; // still just a (slightly wobbly) tap
+      // Travelled far enough: this is a drag, not a tap
+      p.dragActive = true;
+      p.pauseUntil = 0;
+      p.lastStoppedIndex = -1;
+      releaseHold();
+      try { el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      p.lastMoveTime = e.timeStamp;
+      return;
     }
 
-    p.scrollPos -= dx * 1.35;
-    p.startX = x;
+    const dt = Math.max(e.timeStamp - p.lastMoveTime, 1);
+    p.lastMoveTime = e.timeStamp;
+    if (Math.abs(dx) > 0.2) {
+      // Normalised to px per 16.7ms so momentum feels the same on 60Hz and 120Hz screens
+      p.dragVelocity = p.dragVelocity * 0.35 + (dx / dt) * 16.7 * 0.65;
+    }
+
+    p.scrollPos -= dx * p.dragGain;
 
     const loop = el.children.length > PROJECTS.length
       ? el.children[PROJECTS.length].offsetLeft - el.children[0].offsetLeft
@@ -427,68 +496,25 @@ function App() {
     el.scrollLeft = p.scrollPos;
   };
 
-  const handleMouseUpOrLeave = () => {
-    const p = physics.current;
-    if (p.isDragging) {
-      const momentum = Math.min(Math.max(-p.dragVelocity * 1.4, -35), 35);
-      if (Math.abs(momentum) > 1.5) {
-        p.carouselBoost = momentum;
-      }
-    }
-    p.isDragging = false;
-    p.dragVelocity = 0;
-  };
-
-  // Carousel: touch drag (Mobile)
-  const handleTouchStart = (e) => {
-    const el = carouselRef.current;
-    if (!el || !e.touches[0]) return;
-    const p = physics.current;
-    p.isDragging = true;
-    p.isPaused = false;
-    p.pauseUntil = 0;
-    p.carouselBoost = 0;
-    p.dragTotal = 0;
-    p.dragVelocity = 0;
-    p.lastStoppedIndex = -1;
-    p.startX = e.touches[0].clientX / appScaleRef.current;
-  };
-
-  const handleTouchMove = (e) => {
+  const onCarouselUp = (e) => {
     const p = physics.current;
     const el = carouselRef.current;
-    if (!p.isDragging || !el || !e.touches[0]) return;
+    if (!p.isDragging) return;
 
-    const x = e.touches[0].clientX / appScaleRef.current;
-    const dx = x - p.startX;
-    p.dragTotal += Math.abs(dx);
-
-    if (Math.abs(dx) > 0.2) {
-      p.dragVelocity = p.dragVelocity * 0.35 + dx * 0.65;
-    }
-
-    p.scrollPos -= dx * 1.35;
-    p.startX = x;
-
-    const loop = el.children.length > PROJECTS.length
-      ? el.children[PROJECTS.length].offsetLeft - el.children[0].offsetLeft
-      : 0;
-    if (loop > 0) {
-      if (p.scrollPos >= loop) p.scrollPos -= loop;
-      if (p.scrollPos < 0) p.scrollPos += loop;
-    }
-    el.scrollLeft = p.scrollPos;
-  };
-
-  const handleTouchEnd = () => {
-    const p = physics.current;
-    if (p.isDragging) {
+    if (p.dragActive) {
+      // A finger that rested before lifting shouldn't fling the carousel
+      if (e && e.timeStamp - p.lastMoveTime > 80) p.dragVelocity = 0;
       const momentum = Math.min(Math.max(-p.dragVelocity * 1.5, -35), 35);
       if (Math.abs(momentum) > 1.5) {
         p.carouselBoost = momentum;
       }
     }
+
+    if (el && e && el.hasPointerCapture && el.hasPointerCapture(e.pointerId)) {
+      try { el.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    }
     p.isDragging = false;
+    p.dragActive = false;
     p.dragVelocity = 0;
   };
 
@@ -520,50 +546,38 @@ function App() {
     if (p.cubeMoved < 4) boostCarousel(14);
   };
 
+  // Tap / click a card: glide it to the centre and HOLD it (details stay visible).
+  // Tapping the held card again lets it go; dragging, the arrows or the wheel also release it.
   const centerProject = (proj, index) => {
-    // Ignore click if user was dragging
-    if (physics.current.dragTotal > 4) {
-      physics.current.dragTotal = 0;
+    const p = physics.current;
+
+    // Ignore the click that ends a drag
+    if (p.dragTotal > TAP_SLOP) {
+      p.dragTotal = 0;
       return;
     }
 
-    const p = physics.current;
-    setSelectedProject((cur) => {
-      // Deselecting an already-selected card advances smoothly
-      if (cur && cur.id === proj.id && p.isPaused) {
-        p.isPaused = false;
-        p.pauseUntil = 0;
-        p.lastSelectedId = null;
-        const isMobile = window.innerWidth < 768;
-        boostCarousel(isMobile ? 12 : 18);
-        return null;
-      }
+    // Second tap on the held card: resume
+    if (p.isPaused && p.lastSelectedId === proj.id) {
+      p.lastSelectedId = null;
+      setSelectedProject(null);
+      boostCarousel(window.innerWidth < 768 ? 12 : 18);
+      return;
+    }
 
-      // Selecting a card centers it and holds it for 2.5 seconds before auto-resuming
-      const el = carouselRef.current;
-      if (el) {
-        const cardNode = el.children[index];
-        if (cardNode) {
-          const containerWidth = el.clientWidth;
-          const cardLeft = cardNode.offsetLeft;
-          const cardWidth = cardNode.offsetWidth;
-          const targetScrollLeft = cardLeft - containerWidth / 2 + cardWidth / 2;
+    const el = carouselRef.current;
+    const cardNode = el && el.children[index];
+    if (!el || !cardNode) return;
 
-          p.scrollPos = targetScrollLeft;
-          p.carouselBoost = 0;
-          p.isPaused = false;
-          p.pauseUntil = performance.now() + 2800;
-          p.lastStoppedIndex = index;
-          p.lastSelectedId = proj.id;
-
-          el.scrollTo({
-            left: targetScrollLeft,
-            behavior: 'smooth'
-          });
-        }
-      }
-      return proj;
-    });
+    p.targetScroll = cardNode.offsetLeft - el.clientWidth / 2 + cardNode.offsetWidth / 2;
+    p.carouselBoost = 0;
+    p.pauseUntil = 0;
+    p.isPaused = true;
+    p.holdUntil = performance.now() + HOLD_MS;
+    p.lastStoppedIndex = index;
+    p.lastSelectedId = proj.id;
+    setIsHeld(true);
+    setSelectedProject(proj);
   };
 
   useEffect(() => {
@@ -574,16 +588,8 @@ function App() {
   return (
     <div
       onWheel={handleWheel}
-      className="tron overflow-hidden bg-[#02050a] text-slate-100 flex flex-col select-none"
-      style={{
-        transform: `scale(${appScale})`,
-        transformOrigin: 'top left',
-        width: `${100 / appScale}%`,
-        height: `${100 / appScale}%`,
-        position: 'absolute',
-        top: 0,
-        left: 0
-      }}
+      className="tron tron-root overflow-hidden bg-[#02050a] text-slate-100 flex flex-col select-none"
+      style={{ '--s': appScale }}
     >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Roboto:wght@300;400&display=swap');
@@ -658,6 +664,52 @@ function App() {
           filter: blur(4px);
         }
 
+        /* ---- Responsive root: scaled by JS, sized with dvh so mobile browser bars don't hide the footer ---- */
+        .tron-root {
+          position: absolute; top: 0; left: 0;
+          transform-origin: top left;
+          transform: scale(var(--s, 1));
+          width: calc(100% / var(--s, 1));
+          height: calc(100% / var(--s, 1));
+          height: calc(100dvh / var(--s, 1));
+        }
+        html, body { overscroll-behavior: none; }
+        .tron { -webkit-tap-highlight-color: transparent; }
+        .tron button, .tron a, .tron [role="button"] { touch-action: manipulation; }
+        /* Header tabs: full-width row on phones, compact (original) on tablet / desktop */
+        .hdr-nav { display: flex; align-items: stretch; width: 100%; }
+        .hdr-tab { flex: 1 1 0%; min-height: 44px; }
+        @media (min-width: 640px) {
+          .hdr-nav { width: auto; }
+          .hdr-tab { flex: none; min-height: 0; }
+        }
+        /* ---- Carousel: selected card zooms up from its bottom edge and may rise above the dock ---- */
+        .carousel-wrap { position: relative; height: 116px; }
+        .carousel-track {
+          position: absolute; left: 0; right: 0; bottom: 0; top: -64px; padding-top: 64px;
+          align-items: flex-end; pointer-events: none;
+        }
+        .carousel-track > * { pointer-events: auto; }
+        .carousel-card { --zoom: 1; transform: scale(var(--zoom)); transform-origin: 50% 100%; }
+        .carousel-card.is-selected { --zoom: 1.28; z-index: 5; }
+        .carousel-card:active { transform: scale(calc(var(--zoom) * 0.97)); }
+        @media (min-width: 640px) {
+          .carousel-wrap { height: 180px; }
+          .carousel-track { top: -100px; padding-top: 100px; }
+          .carousel-card.is-selected { --zoom: 1.4; }
+        }
+        @media (prefers-reduced-motion: reduce) { .carousel-card { transition: none; } }
+
+        .clamp-2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+
+        /* ---- Panel: contain scrolling + soft fade at the bottom so it is obvious there is more ---- */
+        .tron-panel-inner { overscroll-behavior: contain; }
+        .tron-panel-inner::after {
+          content: ''; display: block; position: sticky; bottom: 0; height: 22px; margin-top: -22px;
+          background: linear-gradient(to bottom, rgba(3,12,20,0), rgba(3,12,20,0.96));
+          pointer-events: none;
+        }
+
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
@@ -679,9 +731,9 @@ function App() {
       <Analytics />
 
       {/* ==================== 1. TOP BAR ==================== */}
-      <header className="relative z-20 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 md:px-12 py-3 border-b border-cyan-400/25 bg-[#02050a]/85 backdrop-blur-md shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="h-3 w-3 rotate-45 bg-cyan-300 shadow-[0_0_14px_#00E5FF]" />
+      <header className="relative z-20 flex flex-wrap items-center justify-between gap-x-6 gap-y-0.5 px-4 sm:px-6 md:px-12 pt-2 sm:py-3 border-b border-cyan-400/25 bg-[#02050a]/85 backdrop-blur-md shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="h-3 w-3 rotate-45 bg-cyan-300 shadow-[0_0_14px_#00E5FF] shrink-0" />
           <span className="orb tracking-tight font-bold text-sm md:text-base text-white">
             Carlos Madrazo, <span className="text-cyan-300">M.Sc.</span>
           </span>
@@ -690,22 +742,25 @@ function App() {
           </span>
         </div>
 
-        <nav aria-label="Sections" className="flex items-center" role="tablist">
+        <nav aria-label="Sections" className="hdr-nav" role="tablist">
           {TABS.map((tab) => {
             const active = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
+                id={`tab-${tab.id}`}
                 role="tab"
                 aria-selected={active}
+                aria-controls="tabpanel-main"
                 onClick={() => setActiveTab(tab.id)}
-                className={`orb tracking-wider px-3 md:px-4 py-2 text-[11px] md:text-xs uppercase transition-all border-b-2 ${
+                className={`hdr-tab orb tracking-wider px-2 sm:px-3 md:px-4 py-2 text-xs sm:text-[11px] md:text-xs uppercase transition-all border-b-2 ${
                   active
                     ? 'text-cyan-200 border-cyan-300 shadow-[0_8px_16px_-10px_#00E5FF]'
-                    : 'text-slate-400 border-transparent hover:text-white hover:border-cyan-400/40'
+                    : 'text-slate-300 sm:text-slate-400 border-transparent hover:text-white hover:border-cyan-400/40'
                 }`}
               >
-                {tab.label}
+                <span className="sm:hidden">{tab.short}</span>
+                <span className="hidden sm:inline">{tab.label}</span>
               </button>
             );
           })}
@@ -733,7 +788,7 @@ function App() {
       </header>
 
       {/* ==================== 2. CENTER: CUBE + CONSOLE ==================== */}
-      <main className="relative z-10 flex-1 min-h-0 flex items-center justify-center gap-10 xl:gap-16 px-6 md:px-14 py-4 max-w-7xl mx-auto w-full">
+      <main className="relative z-10 flex-1 min-h-0 flex items-center justify-center gap-10 xl:gap-16 px-3 sm:px-6 md:px-14 py-3 sm:py-4 max-w-7xl mx-auto w-full">
         {/* Cube (hidden on small screens to give the card the room) */}
         <div className="hidden lg:flex flex-col items-center shrink-0">
           <div
@@ -764,7 +819,7 @@ function App() {
         <div className="relative w-full max-w-2xl max-h-full flex">
           <div className="absolute -inset-1 bg-cyan-400/20 blur-2xl pointer-events-none" />
           <Panel className="w-full">
-            <div className="p-6 md:p-8" role="tabpanel">
+            <div id="tabpanel-main" role="tabpanel" aria-labelledby={`tab-${activeTab}`} className="p-5 pb-7 sm:p-6 md:p-8 select-text">
               {activeTab === 'overview' && (
                 <div>
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
@@ -773,7 +828,7 @@ function App() {
                       href="https://worldcampus.gamedu.tech/course/e7533e00-ce6f-11f1-923c-c93711ca83ed"
                       target="_blank"
                       rel="noreferrer"
-                      className="text-sm text-orange-300 border border-orange-400/50 hover:bg-orange-400/10 px-2.5 py-0.5 transition flex items-center gap-2"
+                      className="text-sm text-orange-300 border border-orange-400/50 hover:bg-orange-400/10 px-3 py-2 sm:px-2.5 sm:py-0.5 transition flex items-center gap-2"
                     >
                       <span className="w-1.5 h-1.5 bg-orange-400" />
                       GAMEDU Technical Instructor ↗
@@ -794,7 +849,7 @@ function App() {
                     in CPU/GPU bottleneck mitigation, custom rendering pipelines, and zero-defect hardware compliance.
                   </p>
 
-                  <div className="flex flex-wrap items-center gap-3 mt-5 pt-4 border-t border-cyan-400/20 text-sm">
+                  <div className="hidden sm:flex flex-wrap items-center gap-3 mt-5 pt-4 border-t border-cyan-400/20 text-sm">
                     <a
                       href="mailto:c.madrazo.pimienta@gmail.com"
                       className="px-4 py-2 bg-cyan-300 text-[#02050a] font-bold hover:bg-cyan-200 transition shadow-[0_0_20px_rgba(0,229,255,0.45)]"
@@ -902,139 +957,196 @@ function App() {
       </main>
 
       {/* ==================== 3. DOCK: PROJECT CAROUSEL ==================== */}
-      <section className="relative z-20 bg-[#030811]/95 border-t border-cyan-400/30 py-3 sm:py-4 shrink-0 shadow-[0_-12px_32px_-14px_rgba(0,229,255,0.35)]">
-        <div className="px-6 md:px-12 mb-2.5 sm:mb-3 flex flex-nowrap sm:flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-nowrap items-center gap-2 sm:gap-3 min-w-0 shrink-0 sm:shrink">
-            <span className="hidden sm:inline-block w-2 h-2 bg-cyan-300 shadow-[0_0_10px_#00E5FF] shrink-0" />
-            <h2 className="orb tracking-wider text-[9px] sm:text-xs font-bold uppercase text-slate-100 whitespace-nowrap">Shipped &amp; in production</h2>
+      <section
+        aria-label="Shipped projects"
+        className="relative z-20 bg-[#030811]/95 border-t border-cyan-400/30 pt-3 pb-3 sm:py-4 shrink-0 shadow-[0_-12px_32px_-14px_rgba(0,229,255,0.35)]"
+      >
+        {/* The selected card grows upward (bottom stays anchored) and may rise above the dock */}
+        <div className="carousel-wrap">
+          {/* Phone: edge arrows (hidden while a card is shown large, so they never cover it) */}
+          <button
+            type="button"
+            onClick={() => boostCarousel(-22)}
+            aria-label="Previous projects"
+            className={`sm:hidden absolute left-1.5 top-1/2 -translate-y-1/2 z-10 w-10 h-10 grid place-items-center rounded-full bg-[#02050a]/85 border border-cyan-400/60 text-cyan-200 shadow-[0_0_14px_rgba(0,229,255,0.35)] active:bg-cyan-300/25 transition-opacity duration-300 ${
+              selectedProject ? 'opacity-0 pointer-events-none' : 'opacity-100'
+            }`}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M15 5l-7 7 7 7" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => boostCarousel(22)}
+            aria-label="Next projects"
+            className={`sm:hidden absolute right-1.5 top-1/2 -translate-y-1/2 z-10 w-10 h-10 grid place-items-center rounded-full bg-[#02050a]/85 border border-cyan-400/60 text-cyan-200 shadow-[0_0_14px_rgba(0,229,255,0.35)] active:bg-cyan-300/25 transition-opacity duration-300 ${
+              selectedProject ? 'opacity-0 pointer-events-none' : 'opacity-100'
+            }`}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+
+          <div
+            ref={carouselRef}
+            onPointerDown={onCarouselDown}
+            onPointerMove={onCarouselMove}
+            onPointerUp={onCarouselUp}
+            onPointerCancel={onCarouselUp}
+            onPointerLeave={onCarouselUp}
+            className="carousel-track flex overflow-hidden no-scrollbar gap-3 sm:gap-4 px-4 sm:px-6 touch-pan-y"
+          >
+            {INFINITE_PROJECTS.map((proj, index) => {
+              const isCopy = index >= PROJECTS.length;
+              const isSelected = selectedProject && selectedProject.id === proj.id;
+              return (
+                <div
+                  key={`${proj.id}-${index}`}
+                  role="button"
+                  tabIndex={isCopy ? -1 : 0}
+                  aria-hidden={isCopy ? 'true' : undefined}
+                  aria-pressed={isSelected ? 'true' : 'false'}
+                  onClick={() => centerProject(proj, index)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      physics.current.dragTotal = 0;
+                      centerProject(proj, index);
+                    }
+                  }}
+                  className={`carousel-card ${isSelected ? 'is-selected' : ''} group relative flex flex-col w-[268px] sm:w-[380px] h-[116px] sm:h-[180px] overflow-hidden bg-[#050d18] border transition-all duration-300 shrink-0 cursor-grab active:cursor-grabbing ${
+                    isSelected
+                      ? 'border-orange-400 shadow-[0_0_22px_rgba(255,154,31,0.4)]'
+                      : 'border-cyan-400/30 hover:border-cyan-300 hover:shadow-[0_0_20px_rgba(0,229,255,0.35)]'
+                  }`}
+                  style={{
+                    clipPath: 'polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px))'
+                  }}
+                >
+                  {/* Image and main info area */}
+                  <div className="relative flex-1 w-full overflow-hidden">
+                    <img
+                      src={proj.img}
+                      alt=""
+                      draggable="false"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      className={`carousel-card-img absolute inset-0 w-full h-full object-cover transition-transform duration-500 ${
+                        isSelected ? 'scale-110 !opacity-100' : 'group-hover:scale-105 group-hover:!opacity-100'
+                      }`}
+                      style={{ opacity: 0.35 }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#02050a] via-[#02050a]/70 to-transparent pointer-events-none" />
+
+                    {isSelected && isHeld && (
+                      <span className="absolute top-2 right-5 z-10 orb tracking-wider text-[9px] sm:text-[10px] text-orange-200 bg-black/70 border border-orange-400/60 px-1.5 py-0.5 pointer-events-none">
+                        ❚❚ HELD
+                      </span>
+                    )}
+
+                    <div className="absolute inset-0 px-3 pt-3 pb-1.5 sm:px-4 sm:pt-4 sm:pb-2 flex flex-col justify-end pointer-events-none">
+                      <div className="flex flex-col min-w-0 pr-3">
+                        <h3 className={`text-sm sm:text-base font-bold leading-tight clamp-2 [text-shadow:0_1px_6px_rgba(0,0,0,0.9)] transition-colors ${
+                          isSelected ? 'text-orange-200' : 'text-white group-hover:text-cyan-200'
+                        }`}>
+                          {proj.title}
+                        </h3>
+                        {/* On phones the tech line lives in the readable detail line below the carousel */}
+                        <p className="hidden sm:block text-xs text-slate-300 truncate mt-1">{proj.tech}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Black bar at the bottom for platforms and year */}
+                  <div className="h-[30px] sm:h-[32px] bg-black w-full flex items-center justify-between px-3 sm:px-3.5 shrink-0 z-10 border-t border-cyan-400/10">
+                    <div className="flex items-center gap-1">
+                      <span className="sm:hidden flex flex-nowrap gap-1">
+                        {proj.platforms_short.split(' • ').map((plat, idx) => (
+                          <span key={idx} className={`px-1.5 py-[3px] text-[10px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
+                            isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
+                          }`}>
+                            {plat}
+                          </span>
+                        ))}
+                      </span>
+                      <span className="hidden sm:flex flex-nowrap gap-1">
+                        {proj.platforms.split(' • ').map((plat, idx) => (
+                          <span key={idx} className={`px-1.5 py-[3px] text-[10px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
+                            isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
+                          }`}>
+                            {plat}
+                          </span>
+                        ))}
+                      </span>
+                    </div>
+                    <span className={`orb shrink-0 px-1.5 py-0.5 text-[10px] sm:text-[11px] font-bold border rounded-sm ${
+                      isSelected ? 'text-orange-200 border-orange-400/70 bg-orange-400/15' : 'text-cyan-200 border-cyan-300/50 bg-cyan-300/10'
+                    }`}>
+                      {proj.year}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Phone: section label + readable details for the selected project */}
+        <div className="sm:hidden px-4 mt-2 min-h-[52px]">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="orb tracking-wider text-[10px] font-bold uppercase text-cyan-300/90 whitespace-nowrap">
+              Shipped &amp; in production
+            </h2>
+            {isHeld && (
+              <span className="orb tracking-wider text-[10px] uppercase text-orange-300 whitespace-nowrap">
+                ❚❚ Holding · tap to resume
+              </span>
+            )}
+          </div>
+          <p className={`mt-1 text-[13px] leading-snug clamp-2 transition-colors ${
+            selectedProject ? 'text-orange-200' : 'text-slate-400'
+          }`}>
+            {selectedProject ? selectedProject.tech : 'Tap a project to hold it · swipe to browse'}
+          </p>
+        </div>
+
+        {/* Tablet / desktop header row (now below the cards so the enlarged card never covers it) */}
+        <div className="hidden sm:flex px-6 md:px-12 mt-3 flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0 shrink">
+            <span className="inline-block w-2 h-2 bg-cyan-300 shadow-[0_0_10px_#00E5FF] shrink-0" />
+            <h2 className="orb tracking-wider text-xs font-bold uppercase text-slate-100 whitespace-nowrap">Shipped &amp; in production</h2>
             {selectedProject && (
-              <span className="hidden sm:inline-block text-sm text-orange-200 bg-orange-400/10 border border-orange-400/50 px-2.5 py-0.5 sm:max-w-[60ch] md:max-w-[85ch] lg:max-w-none truncate">
+              <span className="inline-block text-sm text-orange-200 bg-orange-400/10 border border-orange-400/50 px-2.5 py-0.5 sm:max-w-[60ch] md:max-w-[85ch] lg:max-w-none truncate">
+                {isHeld && <span className="mr-2 text-orange-300">❚❚</span>}
                 {selectedProject.title} · {selectedProject.tech}
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-            <span className="hidden md:inline text-xs text-slate-400 mr-2">Wheel / drag / click to accelerate</span>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="hidden md:inline text-xs text-slate-400 mr-2">Click a card to hold it · drag or scroll to spin</span>
             <button
               onClick={() => boostCarousel(-22)}
-              className="orb tracking-wider px-2 sm:px-3 py-1 text-[9px] sm:text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition whitespace-nowrap"
+              className="orb tracking-wider px-3 py-1.5 text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition whitespace-nowrap"
               aria-label="Accelerate carousel backward"
             >
-              <span className="sm:hidden">REV</span>
-              <span className="hidden sm:inline">‹‹ REV</span>
+              ‹‹ REV
             </button>
             <button
               onClick={() => boostCarousel(22)}
-              className="orb tracking-wider px-2 sm:px-3 py-1 text-[9px] sm:text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition whitespace-nowrap"
+              className="orb tracking-wider px-3 py-1.5 text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition whitespace-nowrap"
               aria-label="Accelerate carousel forward"
             >
-              <span className="sm:hidden">FWD</span>
-              <span className="hidden sm:inline">FWD ››</span>
+              FWD ››
             </button>
           </div>
-        </div>
-        <div
-          ref={carouselRef}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUpOrLeave}
-          onMouseLeave={handleMouseUpOrLeave}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          onTouchCancel={handleTouchEnd}
-          className="relative flex overflow-hidden no-scrollbar gap-4 px-6 cursor-grab active:cursor-grabbing touch-pan-y"
-        >
-          {INFINITE_PROJECTS.map((proj, index) => {
-            const isCopy = index >= PROJECTS.length;
-            const isSelected = selectedProject && selectedProject.id === proj.id;
-            return (
-              <div
-                key={`${proj.id}-${index}`}
-                role="button"
-                tabIndex={isCopy ? -1 : 0}
-                aria-hidden={isCopy ? 'true' : undefined}
-                aria-pressed={isSelected ? 'true' : 'false'}
-                onClick={() => centerProject(proj, index)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    centerProject(proj, index);
-                  }
-                }}
-                className={`group relative flex flex-col w-[240px] sm:w-[380px] h-[110px] sm:h-[180px] overflow-hidden bg-[#050d18] border transition-all duration-300 shrink-0 ${
-                  isSelected
-                    ? 'border-orange-400 shadow-[0_0_22px_rgba(255,154,31,0.4)]'
-                    : 'border-cyan-400/30 hover:border-cyan-300 hover:shadow-[0_0_20px_rgba(0,229,255,0.35)]'
-                }`}
-                style={{
-                  clipPath: 'polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px))'
-                }}
-              >
-                {/* Image and main info area */}
-                <div className="relative flex-1 w-full overflow-hidden">
-                  <img
-                    src={proj.img}
-                    alt=""
-                    draggable="false"
-                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                    className={`carousel-card-img absolute inset-0 w-full h-full object-cover transition-transform duration-500 ${
-                      isSelected ? 'scale-110 !opacity-100' : 'group-hover:scale-105 group-hover:!opacity-100'
-                    }`}
-                    style={{ opacity: 0.35 }}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#02050a] via-[#02050a]/65 to-transparent pointer-events-none" />
-
-                  <div className="absolute inset-0 px-2.5 pt-2.5 pb-1 sm:px-3.5 sm:pt-3.5 sm:pb-2 flex flex-col justify-end pointer-events-none">
-                    <div className="flex flex-col min-w-0 pr-2">
-                      <h3 className={`text-[9px] sm:text-base font-bold leading-tight transition-colors truncate ${
-                        isSelected ? 'text-orange-200' : 'text-white group-hover:text-cyan-200'
-                      }`}>
-                        {proj.title}
-                      </h3>
-                      <p className="text-[7.5px] sm:text-xs text-slate-300 truncate mt-0.5">{proj.tech}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Black space at the bottom for platforms and year */}
-                <div className="h-[22px] sm:h-[26px] bg-black w-full flex items-center justify-between px-3 sm:px-3.5 shrink-0 z-10 border-t border-cyan-400/10">
-                  <div className="flex items-center gap-1">
-                    <span className="sm:hidden flex flex-nowrap gap-1">
-                      {proj.platforms_short.split(" • ").map((plat, idx) => (
-                        <span key={idx} className={`px-1 py-[3px] text-[6px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
-                          isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
-                        }`}>
-                          {plat}
-                        </span>
-                      ))}
-                    </span>
-                    <span className="hidden sm:flex flex-nowrap gap-1">
-                      {proj.platforms.split(" • ").map((plat, idx) => (
-                        <span key={idx} className={`px-1.5 py-[3px] text-[7px] sm:text-[8px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
-                          isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
-                        }`}>
-                          {plat}
-                        </span>
-                      ))}
-                    </span>
-                  </div>
-                  <span className={`orb shrink-0 px-1.5 py-0.5 text-[7px] sm:text-[9px] font-bold border rounded-sm ${
-                    isSelected ? 'text-orange-200 border-orange-400/70 bg-orange-400/15' : 'text-cyan-200 border-cyan-300/50 bg-cyan-300/10'
-                  }`}>
-                    {proj.year}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
         </div>
       </section>
 
       {/* ==================== 4. FOOTER / LEGAL ==================== */}
-      <footer className="relative z-20 bg-[#030811] py-2 sm:py-3 text-center border-t border-cyan-400/10 shrink-0">
-        <p className="text-[8px] sm:text-[10px] text-slate-500/60 max-w-5xl mx-auto px-6 leading-relaxed tracking-wide">
+      <footer className="relative z-20 bg-[#030811] py-1.5 sm:py-3 text-center border-t border-cyan-400/10 shrink-0">
+        <p className="text-[10px] sm:text-[11px] text-slate-400/80 max-w-5xl mx-auto px-4 sm:px-6 leading-snug sm:leading-relaxed tracking-wide">
           All contents, game titles, trade names and/or trade dress, trademarks, artwork, and associated imagery are trademarks and/or copyright material of their respective owners. All rights reserved.
         </p>
       </footer>
