@@ -7,7 +7,7 @@ const PROJECTS = [
     title: "Warrior Cats: Clans of the Forest",
     year: "2026",
     platforms: "PlayStation 5 • Switch 2 • XBOX Series X|S • PC",
-    platforms_short: "PS5 • Switch • XBOX • PC",
+    platforms_short: "PS5 • Switch 2 • XBOX • PC",
     tech: "Unreal Engine / Handheld Optimization",
     img: "/assets/proj/warriorcats.png"
   },
@@ -153,7 +153,8 @@ function App() {
     cubeMoved: 0,
     cubeLastX: 0,
     cubeLastY: 0,
-    reduceMotion: false
+    reduceMotion: false,
+    dragVelocity: 0
   });
 
   useEffect(() => {
@@ -164,26 +165,15 @@ function App() {
       const w = window.innerWidth;
       const h = window.innerHeight;
       if (w < 768 && h > w) {
-        setAppScale(1); 
+        // Reducimos la escala en móviles para que se vea más contenido (aprox 75% - 95%)
+        setAppScale(Math.min(Math.max(w / 450, 0.75), 0.95)); 
       } else if (w < 400) {
-        //setAppScale(Math.min(Math.max(w / 2200, 0.8), 1.5));
-        // setAppScale(Math.min(Math.max(w / 2000, 0.08), 1.5));
-        //setAppScale(Math.min(Math.max(w / 900, 0.55), 1.0));
-        // setAppScale(0.2); 
-
         setAppScale(Math.min(Math.max(w / 1200, 0.3), 1.5));
       } else if (w < 1000) {
-        //setAppScale(Math.min(Math.max(w / 2200, 0.8), 1.5));
-        // setAppScale(Math.min(Math.max(w / 2000, 0.08), 1.5));
         setAppScale(Math.min(Math.max(w / 1400, 0.4), 1.5));
       } else if (w < 1620) {
-        //setAppScale(Math.min(Math.max(w / 2200, 0.8), 1.5));
-        // setAppScale(Math.min(Math.max(w / 2000, 0.08), 1.5));
         setAppScale(Math.min(Math.max(w / 1600, 0.55), 1.5));
       } else {
-        // setAppScale(Math.min(Math.max(w / 2400, 0.6), 1.5));
-
-        //setAppScale(Math.min(Math.max(w / 2000, 1.2), 2.0));
         setAppScale(Math.min(Math.max(w / 1800, 0.8), 1.5));
       }
     };
@@ -268,13 +258,26 @@ function App() {
     if (!p.isDragging || !el) return;
     e.preventDefault();
     const x = e.pageX - el.offsetLeft;
-    p.scrollPos -= (x - p.startX) * 1.8;
+    const dx = x - p.startX;
+    p.dragVelocity = dx; // Capturamos la velocidad/dirección del arrastre
+    p.scrollPos -= dx * 1.8;
     p.startX = x;
     el.scrollLeft = p.scrollPos;
   };
   const handleMouseUpOrLeave = () => {
-    physics.current.isDragging = false;
-    physics.current.isPaused = false;
+    const p = physics.current;
+    if (p.isDragging) {
+      // Al soltar el click, inyectamos la inercia (momentum) al carrusel
+      // Si dx es negativo (arrastre a la izquierda), queremos avanzar (boost positivo)
+      // Limitamos el boost máximo para que no salga volando si se arrastra muy rápido
+      const momentum = Math.min(Math.max(-p.dragVelocity * 1.5, -40), 40);
+      if (Math.abs(momentum) > 2) {
+        p.carouselBoost += momentum;
+      }
+    }
+    p.isDragging = false;
+    p.isPaused = false;
+    p.dragVelocity = 0;
   };
 
   // Carousel: native touch scrolling, then resume auto-scroll from where the finger left it
@@ -761,47 +764,44 @@ function App() {
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#02050a] via-[#02050a]/65 to-transparent" />
 
-                  <div className="absolute inset-0 px-2.5 pt-2.5 pb-1 sm:px-3.5 sm:pt-3.5 sm:pb-2 flex flex-col justify-between pointer-events-none">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className={`orb px-2 py-0.5 text-[8px] sm:text-[11px] font-bold border ${
-                        isSelected ? 'text-orange-200 border-orange-400/70 bg-orange-400/15' : 'text-cyan-200 border-cyan-300/50 bg-cyan-300/10'
+                  <div className="absolute inset-0 px-2.5 pt-2.5 pb-1 sm:px-3.5 sm:pt-3.5 sm:pb-2 flex flex-col justify-end pointer-events-none">
+                    <div className="flex flex-col min-w-0">
+                      <h3 className={`text-[9px] sm:text-base font-bold leading-tight transition-colors truncate ${
+                        isSelected ? 'text-orange-200' : 'text-white group-hover:text-cyan-200'
                       }`}>
-                        {proj.year}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-col gap-0.5 sm:gap-1.5">
-                      <div>
-                        <h3 className={`text-[11px] sm:text-base font-bold leading-tight transition-colors ${
-                          isSelected ? 'text-orange-200' : 'text-white group-hover:text-cyan-200'
-                        }`}>
-                          {proj.title}
-                        </h3>
-                        <p className="text-[9px] sm:text-xs text-slate-300 truncate mt-0.5">{proj.tech}</p>
-                      </div>
+                        {proj.title}
+                      </h3>
+                      <p className="text-[7.5px] sm:text-xs text-slate-300 truncate mt-0.5">{proj.tech}</p>
                     </div>
                   </div>
                 </div>
                 
-                {/* Black space at the bottom for platforms */}
-                <div className="h-[22px] sm:h-[26px] bg-black w-full flex items-center justify-start px-3 sm:px-3.5 shrink-0 z-10 border-t border-cyan-400/10">
-                  <span className="sm:hidden flex flex-nowrap gap-1">
-                    {proj.platforms_short.split(" • ").map((plat, idx) => (
-                      <span key={idx} className={`px-1 py-[3px] text-[6px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
-                        isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
-                      }`}>
-                        {plat}
-                      </span>
-                    ))}
-                  </span>
-                  <span className="hidden sm:flex flex-nowrap gap-1">
-                    {proj.platforms.split(" • ").map((plat, idx) => (
-                      <span key={idx} className={`px-1.5 py-[3px] text-[7px] sm:text-[8px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
-                        isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
-                      }`}>
-                        {plat}
-                      </span>
-                    ))}
+                {/* Black space at the bottom for platforms and year */}
+                <div className="h-[22px] sm:h-[26px] bg-black w-full flex items-center justify-between px-3 sm:px-3.5 shrink-0 z-10 border-t border-cyan-400/10">
+                  <div className="flex items-center gap-1">
+                    <span className="sm:hidden flex flex-nowrap gap-1">
+                      {proj.platforms_short.split(" • ").map((plat, idx) => (
+                        <span key={idx} className={`px-1 py-[3px] text-[6px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
+                          isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
+                        }`}>
+                          {plat}
+                        </span>
+                      ))}
+                    </span>
+                    <span className="hidden sm:flex flex-nowrap gap-1">
+                      {proj.platforms.split(" • ").map((plat, idx) => (
+                        <span key={idx} className={`px-1.5 py-[3px] text-[7px] sm:text-[8px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
+                          isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
+                        }`}>
+                          {plat}
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                  <span className={`orb shrink-0 px-1.5 py-0.5 text-[7px] sm:text-[9px] font-bold border rounded-sm ${
+                    isSelected ? 'text-orange-200 border-orange-400/70 bg-orange-400/15' : 'text-cyan-200 border-cyan-300/50 bg-cyan-300/10'
+                  }`}>
+                    {proj.year}
                   </span>
                 </div>
               </div>
