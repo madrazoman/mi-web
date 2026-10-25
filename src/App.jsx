@@ -112,6 +112,8 @@ const CUBE_FACES = [
   { cls: 'face-bottom', label: 'CONSOLE', value: 'GNMX' }
 ];
 
+const INFINITE_PROJECTS = [...PROJECTS, ...PROJECTS];
+
 const TABS = [
   { id: 'overview', label: 'Profile' },
   { id: 'architecture', label: 'Architecture & R&D' },
@@ -154,7 +156,9 @@ function App() {
     cubeLastX: 0,
     cubeLastY: 0,
     reduceMotion: false,
-    dragVelocity: 0
+    dragVelocity: 0,
+    dragTotal: 0,
+    lastSelectedId: null
   });
 
   useEffect(() => {
@@ -226,28 +230,57 @@ function App() {
         
         // Efecto de sombreado (tint) dinámico basado en la posición central
         const containerCenter = el.clientWidth / 2;
-        // La distancia máxima para alcanzar el oscurecimiento total
         const maxDist = el.clientWidth / 1.5; 
+        
+        let closestIndex = -1;
+        let minDist = Infinity;
         
         for (let i = 0; i < el.children.length; i++) {
           const card = el.children[i];
           const img = card.querySelector('.carousel-card-img');
           const isSelected = card.getAttribute('aria-pressed') === 'true';
           
+          const cardCenter = card.offsetLeft + card.offsetWidth / 2 - el.scrollLeft;
+          let dist = Math.abs(cardCenter - containerCenter);
+          
+          if (dist < minDist) {
+            minDist = dist;
+            closestIndex = i;
+          }
+          
           if (img) {
             if (isSelected) {
               img.style.opacity = '1';
             } else {
-              const cardCenter = card.offsetLeft + card.offsetWidth / 2 - el.scrollLeft;
-              let dist = Math.abs(cardCenter - containerCenter);
-              
-              // ratio va de 0 (centro) a 1 (bordes)
               let ratio = dist / maxDist;
               ratio = Math.min(Math.max(ratio, 0), 1);
-              
-              // Opacidad final: 1 en el centro, baja hasta 0.35 en los bordes
               const finalOpacity = 1 - (ratio * 0.65);
               img.style.opacity = finalOpacity.toString();
+            }
+          }
+        }
+
+        // Lógica de auto-selección y deselección al hacer drag o coasting
+        const isActivelyDragging = p.isDragging && p.dragTotal > 2;
+        if (isActivelyDragging || Math.abs(p.carouselBoost) > 8) {
+          // Deseleccionar si se arrastra o si el carrusel va rápido
+          if (p.lastSelectedId !== null) {
+            p.lastSelectedId = null;
+            setSelectedProject(null);
+          }
+        } else {
+          // Auto-seleccionar si va lento y hay una tarjeta en el centro
+          if (minDist < 60 && closestIndex !== -1) {
+            const proj = INFINITE_PROJECTS[closestIndex];
+            if (proj && p.lastSelectedId !== proj.id) {
+              p.lastSelectedId = proj.id;
+              setSelectedProject(proj);
+            }
+          } else if (!p.isPaused) {
+            // Deseleccionar si está en el "hueco" entre tarjetas y no está pausado
+            if (p.lastSelectedId !== null) {
+              p.lastSelectedId = null;
+              setSelectedProject(null);
             }
           }
         }
@@ -287,8 +320,13 @@ function App() {
     e.preventDefault();
     const x = e.pageX - el.offsetLeft;
     const dx = x - p.startX;
-    p.dragVelocity = dx; // Capturamos la velocidad/dirección del arrastre
-    p.scrollPos -= dx * 1.8;
+    p.dragTotal += Math.abs(dx);
+    
+    if (Math.abs(dx) > 0.5) {
+      p.dragVelocity = p.dragVelocity * 0.4 + dx * 0.6;
+    }
+    
+    p.scrollPos -= dx * 1.5;
     p.startX = x;
     el.scrollLeft = p.scrollPos;
   };
@@ -325,11 +363,14 @@ function App() {
     const x = e.touches[0].pageX - el.offsetLeft;
     const dx = x - p.startX;
     p.dragTotal += Math.abs(dx);
-    p.dragVelocity = dx; 
     
-    // Reverse logic: Si dx es negativo (arrastre a la izquierda), scrollPos aumenta.
-    // Usamos el mismo multiplicador que en el mouse para que sea consistente
-    p.scrollPos -= dx * 1.8; 
+    // Suavizamos la velocidad para evitar que un micro-movimiento al soltar el dedo invierta la dirección
+    if (Math.abs(dx) > 0.5) {
+      p.dragVelocity = p.dragVelocity * 0.4 + dx * 0.6; 
+    }
+    
+    // Multiplicamos por un factor que escale bien en móvil
+    p.scrollPos -= dx * 1.5; 
     p.startX = x;
     el.scrollLeft = p.scrollPos;
   };
@@ -424,7 +465,7 @@ function App() {
     if (panel) panel.scrollTo({ top: 0, behavior: 'smooth' });
   }, [activeTab]);
 
-  const infiniteProjects = [...PROJECTS, ...PROJECTS];
+  
 
   return (
     <div
@@ -443,7 +484,8 @@ function App() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Roboto:wght@300;400&display=swap');
 
-        .tron { font-family: 'Inter', 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif; font-weight: 400; }
+        html, body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+        .tron { font-family: \'Inter\', \'Roboto\', system-ui, -apple-system, \'Segoe UI\', sans-serif; font-weight: 400; -webkit-text-size-adjust: 100%; }
         .orb  { font-family: 'Inter', 'Roboto', system-ui, sans-serif; font-weight: 700; }
         .light-copy { font-family: 'Roboto', 'Inter', system-ui, sans-serif; font-weight: 300; }
 
@@ -800,9 +842,9 @@ function App() {
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
           onTouchCancel={handleTouchEnd}
-          className="relative flex overflow-hidden no-scrollbar gap-4 px-6 cursor-grab active:cursor-grabbing"
+          className="relative flex overflow-hidden no-scrollbar gap-4 px-6 cursor-grab active:cursor-grabbing touch-pan-y"
         >
-          {infiniteProjects.map((proj, index) => {
+          {INFINITE_PROJECTS.map((proj, index) => {
             const isCopy = index >= PROJECTS.length;
             const isSelected = selectedProject && selectedProject.id === proj.id;
             return (
