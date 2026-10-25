@@ -801,47 +801,44 @@ function App() {
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#02050a] via-[#02050a]/65 to-transparent" />
 
-                  <div className="absolute inset-0 px-2.5 pt-2.5 pb-1 sm:px-3.5 sm:pt-3.5 sm:pb-2 flex flex-col justify-between pointer-events-none">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className={`orb px-2 py-0.5 text-[8px] sm:text-[11px] font-bold border ${
-                        isSelected ? 'text-orange-200 border-orange-400/70 bg-orange-400/15' : 'text-cyan-200 border-cyan-300/50 bg-cyan-300/10'
+                  <div className="absolute inset-0 px-2.5 pt-2.5 pb-1 sm:px-3.5 sm:pt-3.5 sm:pb-2 flex flex-col justify-end pointer-events-none">
+                    <div className="flex flex-col min-w-0 pr-2">
+                      <h3 className={`text-[9px] sm:text-base font-bold leading-tight transition-colors truncate ${
+                        isSelected ? 'text-orange-200' : 'text-white group-hover:text-cyan-200'
                       }`}>
-                        {proj.year}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-col gap-0.5 sm:gap-1.5">
-                      <div>
-                        <h3 className={`text-[11px] sm:text-base font-bold leading-tight transition-colors ${
-                          isSelected ? 'text-orange-200' : 'text-white group-hover:text-cyan-200'
-                        }`}>
-                          {proj.title}
-                        </h3>
-                        <p className="text-[9px] sm:text-xs text-slate-300 truncate mt-0.5">{proj.tech}</p>
-                      </div>
+                        {proj.title}
+                      </h3>
+                      <p className="text-[7.5px] sm:text-xs text-slate-300 truncate mt-0.5">{proj.tech}</p>
                     </div>
                   </div>
                 </div>
                 
                 {/* Black space at the bottom for platforms */}
-                <div className="h-[22px] sm:h-[26px] bg-black w-full flex items-center justify-start px-3 sm:px-3.5 shrink-0 z-10 border-t border-cyan-400/10">
-                  <span className="sm:hidden flex flex-nowrap gap-1">
-                    {proj.platforms_short.split(" • ").map((plat, idx) => (
-                      <span key={idx} className={`px-1 py-[3px] text-[6px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
-                        isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
-                      }`}>
-                        {plat}
-                      </span>
-                    ))}
-                  </span>
-                  <span className="hidden sm:flex flex-nowrap gap-1">
-                    {proj.platforms.split(" • ").map((plat, idx) => (
-                      <span key={idx} className={`px-1.5 py-[3px] text-[7px] sm:text-[8px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
-                        isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
-                      }`}>
-                        {plat}
-                      </span>
-                    ))}
+                <div className="h-[22px] sm:h-[26px] bg-black w-full flex items-center justify-between px-3 sm:px-3.5 shrink-0 z-10 border-t border-cyan-400/10">
+                  <div className="flex items-center gap-1">
+                    <span className="sm:hidden flex flex-nowrap gap-1">
+                      {proj.platforms_short.split(" • ").map((plat, idx) => (
+                        <span key={idx} className={`px-1 py-[3px] text-[6px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
+                          isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
+                        }`}>
+                          {plat}
+                        </span>
+                      ))}
+                    </span>
+                    <span className="hidden sm:flex flex-nowrap gap-1">
+                      {proj.platforms.split(" • ").map((plat, idx) => (
+                        <span key={idx} className={`px-1.5 py-[3px] text-[7px] sm:text-[8px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
+                          isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
+                        }`}>
+                          {plat}
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                  <span className={`orb shrink-0 px-1.5 py-0.5 text-[7px] sm:text-[9px] font-bold border rounded-sm ${
+                    isSelected ? 'text-orange-200 border-orange-400/70 bg-orange-400/15' : 'text-cyan-200 border-cyan-300/50 bg-cyan-300/10'
+                  }`}>
+                    {proj.year}
                   </span>
                 </div>
               </div>
