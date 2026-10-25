@@ -281,14 +281,45 @@ function App() {
   };
 
   // Carousel: native touch scrolling, then resume auto-scroll from where the finger left it
-  const handleTouchStart = () => { physics.current.isDragging = true; };
-  const handleTouchEnd = () => {
-    const p = physics.current;
-    if (carouselRef.current) p.scrollPos = carouselRef.current.scrollLeft;
-    p.isDragging = false;
-    p.isPaused = false; // <-- Added for mobiles
+    const handleTouchStart = (e) => { 
+    const el = carouselRef.current;
+    if (!el) return;
+    physics.current.isDragging = true; 
+    physics.current.dragTotal = 0;
+    physics.current.startX = e.touches[0].pageX - el.offsetLeft;
   };
 
+  const handleTouchMove = (e) => {
+    const p = physics.current;
+    const el = carouselRef.current;
+    if (!p.isDragging || !el) return;
+    
+    const x = e.touches[0].pageX - el.offsetLeft;
+    const dx = x - p.startX;
+    p.dragTotal += Math.abs(dx);
+    p.dragVelocity = dx; 
+    
+    // Reverse logic: Si dx es negativo (arrastre a la izquierda), scrollPos aumenta.
+    // Usamos el mismo multiplicador que en el mouse para que sea consistente
+    p.scrollPos -= dx * 1.8; 
+    p.startX = x;
+    el.scrollLeft = p.scrollPos;
+  };
+
+  const handleTouchEnd = () => {
+    const p = physics.current;
+    if (p.isDragging) {
+      // Si arrastró hacia la izquierda (dx negativo), queremos un boost positivo (hacia la derecha/adelante)
+      // Limitamos el impulso entre -40 y 40 para que no sea incontrolable
+      const momentum = Math.min(Math.max(-p.dragVelocity * 1.5, -40), 40);
+      if (Math.abs(momentum) > 2) {
+        boostCarousel(momentum);
+      }
+    }
+    p.isDragging = false;
+    p.isPaused = false;
+    p.dragVelocity = 0;
+  };
   // Cube: drag to spin, click (without dragging) to accelerate
   const onCubeDown = (e) => {
     const p = physics.current;
@@ -349,6 +380,12 @@ function App() {
 
     setSelectedProject((cur) => (cur && cur.id === proj.id ? null : proj));
   };
+
+  useEffect(() => {
+    // Al cambiar de pestaña, hacer scroll al inicio del panel de texto
+    const panel = document.querySelector('.tron-panel-inner');
+    if (panel) panel.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [activeTab]);
 
   const infiniteProjects = [...PROJECTS, ...PROJECTS];
 
@@ -726,7 +763,7 @@ function App() {
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
           onTouchCancel={handleTouchEnd}
-          className="relative flex overflow-x-auto no-scrollbar gap-4 px-6 cursor-grab active:cursor-grabbing"
+          className="relative flex overflow-hidden no-scrollbar gap-4 px-6 cursor-grab active:cursor-grabbing"
         >
           {infiniteProjects.map((proj, index) => {
             const isCopy = index >= PROJECTS.length;
@@ -764,44 +801,47 @@ function App() {
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#02050a] via-[#02050a]/65 to-transparent" />
 
-                  <div className="absolute inset-0 px-2.5 pt-2.5 pb-1 sm:px-3.5 sm:pt-3.5 sm:pb-2 flex flex-col justify-end pointer-events-none">
-                    <div className="flex flex-col min-w-0">
-                      <h3 className={`text-[9px] sm:text-base font-bold leading-tight transition-colors truncate ${
-                        isSelected ? 'text-orange-200' : 'text-white group-hover:text-cyan-200'
+                  <div className="absolute inset-0 px-2.5 pt-2.5 pb-1 sm:px-3.5 sm:pt-3.5 sm:pb-2 flex flex-col justify-between pointer-events-none">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className={`orb px-2 py-0.5 text-[8px] sm:text-[11px] font-bold border ${
+                        isSelected ? 'text-orange-200 border-orange-400/70 bg-orange-400/15' : 'text-cyan-200 border-cyan-300/50 bg-cyan-300/10'
                       }`}>
-                        {proj.title}
-                      </h3>
-                      <p className="text-[7.5px] sm:text-xs text-slate-300 truncate mt-0.5">{proj.tech}</p>
+                        {proj.year}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-0.5 sm:gap-1.5">
+                      <div>
+                        <h3 className={`text-[11px] sm:text-base font-bold leading-tight transition-colors ${
+                          isSelected ? 'text-orange-200' : 'text-white group-hover:text-cyan-200'
+                        }`}>
+                          {proj.title}
+                        </h3>
+                        <p className="text-[9px] sm:text-xs text-slate-300 truncate mt-0.5">{proj.tech}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
                 
-                {/* Black space at the bottom for platforms and year */}
-                <div className="h-[22px] sm:h-[26px] bg-black w-full flex items-center justify-between px-3 sm:px-3.5 shrink-0 z-10 border-t border-cyan-400/10">
-                  <div className="flex items-center gap-1">
-                    <span className="sm:hidden flex flex-nowrap gap-1">
-                      {proj.platforms_short.split(" • ").map((plat, idx) => (
-                        <span key={idx} className={`px-1 py-[3px] text-[6px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
-                          isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
-                        }`}>
-                          {plat}
-                        </span>
-                      ))}
-                    </span>
-                    <span className="hidden sm:flex flex-nowrap gap-1">
-                      {proj.platforms.split(" • ").map((plat, idx) => (
-                        <span key={idx} className={`px-1.5 py-[3px] text-[7px] sm:text-[8px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
-                          isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
-                        }`}>
-                          {plat}
-                        </span>
-                      ))}
-                    </span>
-                  </div>
-                  <span className={`orb shrink-0 px-1.5 py-0.5 text-[7px] sm:text-[9px] font-bold border rounded-sm ${
-                    isSelected ? 'text-orange-200 border-orange-400/70 bg-orange-400/15' : 'text-cyan-200 border-cyan-300/50 bg-cyan-300/10'
-                  }`}>
-                    {proj.year}
+                {/* Black space at the bottom for platforms */}
+                <div className="h-[22px] sm:h-[26px] bg-black w-full flex items-center justify-start px-3 sm:px-3.5 shrink-0 z-10 border-t border-cyan-400/10">
+                  <span className="sm:hidden flex flex-nowrap gap-1">
+                    {proj.platforms_short.split(" • ").map((plat, idx) => (
+                      <span key={idx} className={`px-1 py-[3px] text-[6px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
+                        isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
+                      }`}>
+                        {plat}
+                      </span>
+                    ))}
+                  </span>
+                  <span className="hidden sm:flex flex-nowrap gap-1">
+                    {proj.platforms.split(" • ").map((plat, idx) => (
+                      <span key={idx} className={`px-1.5 py-[3px] text-[7px] sm:text-[8px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
+                        isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
+                      }`}>
+                        {plat}
+                      </span>
+                    ))}
                   </span>
                 </div>
               </div>
