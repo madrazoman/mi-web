@@ -103,7 +103,8 @@ const PROJECTS = [
   }
 ];
 
-const INFINITE_PROJECTS = [...PROJECTS, ...PROJECTS];
+// 3 sets prevent right-edge scroll clamping & flickering on 4K / ultra-wide monitors
+const INFINITE_PROJECTS = [...PROJECTS, ...PROJECTS, ...PROJECTS];
 
 const CUBE_FACES = [
   { cls: 'face-front', label: 'CORE', value: 'C++23' },
@@ -123,9 +124,9 @@ const TABS = [
 const CYAN = '#00E5FF';
 const ORANGE = '#FF9A1F';
 
-const HOLD_MS = 8000;        // how long a tapped / clicked card stays held
-const AUTO_PAUSE_MS = 2800;  // automatic pause when a card reaches the centre
-const TAP_SLOP = 8;          // px of travel that still counts as a tap, not a drag
+const HOLD_MS = 8000;
+const AUTO_PAUSE_MS = 2800;
+const TAP_SLOP = 8;
 
 function Panel({ children, className = '' }) {
   return (
@@ -138,7 +139,6 @@ function Panel({ children, className = '' }) {
 function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedProject, setSelectedProject] = useState(null);
-  const [isHeld, setIsHeld] = useState(false);
   const [appScale, setAppScale] = useState(1);
   const [isAutoMode, setIsAutoMode] = useState(false);
 
@@ -152,19 +152,19 @@ function App() {
     velRotX: 0,
     velRotY: 0,
     scrollPos: 0,
-    baseCarouselSpeed: 1.35, // Snappy automatic stepping
+    baseCarouselSpeed: 1.35,
     carouselBoost: 0,
-    targetScroll: null,      // When set, the carousel glides to this scroll position
-    isDragging: false,       // Pointer is down on the carousel
-    dragActive: false,       // ...and has travelled far enough to count as a drag (not a tap)
-    dragGain: 1,             // 1:1 for touch / pen, a bit faster for mouse
+    targetScroll: null,
+    isDragging: false,
+    dragActive: false,
+    dragGain: 1,
     downX: 0,
     startX: 0,
     lastMoveTime: 0,
-    isPaused: false,         // True while the user is "holding" a card (tap / click)
-    holdUntil: 0,            // Timestamp when a held card is released automatically
-    pauseUntil: 0,           // Timestamp for the automatic pause when a card reaches the centre
-    lastStoppedIndex: -1,    // Prevents re-triggering the pause on the exact same card
+    isPaused: false,
+    holdUntil: 0,
+    pauseUntil: 0,
+    lastStoppedIndex: -1,
     lastSelectedId: null,
     cubeDragging: false,
     cubeMoved: 0,
@@ -181,9 +181,8 @@ function App() {
     const p = physics.current;
     p.isPaused = false;
     p.holdUntil = 0;
-    setIsHeld(false);
   }, []);
-  
+
   useEffect(() => {
     physics.current.isAutoMode = isAutoMode;
   }, [isAutoMode]);
@@ -196,22 +195,28 @@ function App() {
       const h = window.innerHeight;
       let nextScale = 1;
 
-      if (h < 520 && w > h) {
-        // Phone in landscape
-        nextScale = Math.min(Math.max(h / 760, 0.45), 0.75);
-      } else if (w < 768 && h > w) {
-        // Phone in portrait: the layout is designed for ~360 CSS px of width.
-        // Never shrink it (text stays readable) and grow it slightly on bigger phones.
+      if (w < 768 && h > w) {
+        // Mobile Portrait (intacto)
         nextScale = Math.min(Math.max(w / 360, 0.88), 1.12);
-      } else if (w < 1000 && h > w) {
-        // Tablet in portrait
-        nextScale = Math.min(Math.max(w / 760, 0.9), 1.3);
-      } else if (w < 1000) {
-        nextScale = Math.min(Math.max(w / 1400, 0.4), 1.5);
-      } else if (w < 1620) {
-        nextScale = Math.min(Math.max(w / 1600, 0.55), 1.5);
+      } else if (h < 520 && w > h) {
+        // Mobile Landscape
+        nextScale = Math.min(Math.max(h / 760, 0.45), 0.75);
       } else {
-        nextScale = Math.min(Math.max(w / 1800, 0.8), 1.5);
+        // PC / Tablet / Monitores (1080p, 1440p, 4K):
+        // Respetamos tus escalas por ancho (w) Y limitamos por alto (h / 920)
+        // para que en 1080p el carrusel nunca aplaste el panel central.
+        let widthScale = 1;
+        if (w < 400) {
+          widthScale = Math.min(Math.max(w / 1200, 0.3), 1.5);
+        } else if (w < 1000) {
+          widthScale = Math.min(Math.max(w / 1400, 0.4), 1.5);
+        } else if (w < 1620) {
+          widthScale = Math.min(Math.max(w / 1600, 0.55), 1.5);
+        } else {
+          widthScale = Math.min(Math.max(w / 1800, 0.8), 1.5);
+        }
+        const heightCap = Math.min(Math.max(h / 920, 0.5), 1.5);
+        nextScale = Math.min(widthScale, heightCap);
       }
 
       appScaleRef.current = nextScale;
@@ -239,7 +244,7 @@ function App() {
     const tick = () => {
       const now = performance.now();
 
-      // 1. 3D cube: idle spin + momentum from wheel / drag
+      // 1. 3D cube: idle spin + momentum
       if (!p.cubeDragging) {
         p.rotY += (p.reduceMotion ? 0 : 0.22) + p.velRotY;
         p.rotX += (p.reduceMotion ? 0 : 0.06) + p.velRotX;
@@ -250,28 +255,24 @@ function App() {
         cubeRef.current.style.transform = `rotateX(${p.rotX}deg) rotateY(${p.rotY}deg)`;
       }
 
-      // 2. Infinite carousel + centre-pause stepper
+      // 2. Infinite carousel (3 sets: stay inside middle set [loop, 2*loop) to avoid 4K edge clamping)
       const el = carouselRef.current;
-      if (el && el.children.length > PROJECTS.length) {
-        // Initialization: start the carousel in the SECOND set (avoids negative scroll bounds)
-        // without auto-selecting or pausing it.
-        if (!p.isInitialized && el.clientWidth > 0 && el.children[PROJECTS.length].offsetWidth > 0) {
+      if (el && el.children.length >= PROJECTS.length * 2) {
+        const loop = el.children[PROJECTS.length].offsetLeft - el.children[0].offsetLeft;
+
+        if (!p.isInitialized && el.clientWidth > 0 && loop > 0) {
           const startIndex = PROJECTS.length;
           const startCard = el.children[startIndex];
           const target = startCard.offsetLeft - el.clientWidth / 2 + startCard.offsetWidth / 2;
 
           p.scrollPos = target;
-          el.scrollLeft = target;
+          el.scrollLeft = Math.round(target);
           p.isInitialized = true;
         }
 
-        const loop = el.children[PROJECTS.length].offsetLeft - el.children[0].offsetLeft;
-
-        // Has the automatic centre pause finished?
         if (p.pauseUntil > 0 && now >= p.pauseUntil) {
           p.pauseUntil = 0;
           if (!p.isPaused && !p.isDragging) {
-            // Release selection so the card zooms back out as it leaves the centre
             if (p.lastSelectedId !== null) {
               p.lastSelectedId = null;
               setSelectedProject(null);
@@ -282,7 +283,6 @@ function App() {
         const isAutoPaused = p.pauseUntil > now;
 
         if (!p.isDragging) {
-          // Glide a tapped card to the centre (shortest way round the loop)
           if (p.targetScroll !== null && loop > 0) {
             let diff = (((p.targetScroll - p.scrollPos) % loop) + loop) % loop;
             if (diff > loop / 2) diff -= loop;
@@ -294,7 +294,6 @@ function App() {
             }
           }
 
-          // Users who prefer reduced motion get no auto-advance (they can still drag / use the arrows)
           const stopped = p.isPaused || isAutoPaused || p.reduceMotion;
           const speed = stopped ? 0.0 : p.baseCarouselSpeed;
           p.scrollPos += speed + p.carouselBoost;
@@ -302,23 +301,23 @@ function App() {
           if (Math.abs(p.carouselBoost) < 0.05) p.carouselBoost = 0;
 
           if (loop > 0) {
-            if (p.scrollPos >= loop) {
+            if (p.scrollPos >= loop * 2) {
               p.scrollPos -= loop;
               if (p.lastStoppedIndex >= PROJECTS.length) {
                 p.lastStoppedIndex -= PROJECTS.length;
               }
-            }
-            if (p.scrollPos < 0) {
+            } else if (p.scrollPos < loop * 0.5) {
               p.scrollPos += loop;
-              if (p.lastStoppedIndex >= 0 && p.lastStoppedIndex < PROJECTS.length) {
+              if (p.lastStoppedIndex >= 0 && p.lastStoppedIndex < PROJECTS.length * 2) {
                 p.lastStoppedIndex += PROJECTS.length;
               }
             }
-            el.scrollLeft = p.scrollPos;
+            el.scrollLeft = Math.round(p.scrollPos);
           }
         }
 
         // 3. Dynamic opacity & closest-to-centre detection
+        const currentScroll = el.scrollLeft;
         const containerCenter = el.clientWidth / 2;
         const maxDist = el.clientWidth / 1.5;
 
@@ -327,7 +326,7 @@ function App() {
 
         for (let i = 0; i < el.children.length; i++) {
           const card = el.children[i];
-          const cardCenter = card.offsetLeft + card.offsetWidth / 2 - el.scrollLeft;
+          const cardCenter = card.offsetLeft + card.offsetWidth / 2 - currentScroll;
           const dist = Math.abs(cardCenter - containerCenter);
 
           if (dist < minDist) {
@@ -339,18 +338,15 @@ function App() {
           const isSelected = card.getAttribute('aria-pressed') === 'true';
 
           if (img) {
-            if (isSelected) {
-              img.style.opacity = '1';
-            } else {
-              let ratio = dist / maxDist;
-              ratio = Math.min(Math.max(ratio, 0), 1);
-              const finalOpacity = 1 - ratio * 0.65;
-              img.style.opacity = finalOpacity.toString();
+            const targetOp = isSelected
+              ? '1'
+              : (1 - Math.min(Math.max(dist / maxDist, 0), 1) * 0.65).toFixed(2);
+            if (img.style.opacity !== targetOp) {
+              img.style.opacity = targetOp;
             }
           }
         }
 
-        // A held card times out: let it go, and don't re-trigger the auto pause on it
         if (p.isPaused && !p.isDragging && now >= p.holdUntil) {
           releaseHold();
           p.pauseUntil = 0;
@@ -361,18 +357,16 @@ function App() {
           }
         }
 
-        // Clear the lock on the previously stopped card once it moves away from the centre
         if (!p.isPaused && p.lastStoppedIndex !== -1 && closestIndex !== -1) {
           const stoppedCard = el.children[p.lastStoppedIndex];
           if (stoppedCard) {
-            const stoppedCenter = stoppedCard.offsetLeft + stoppedCard.offsetWidth / 2 - el.scrollLeft;
+            const stoppedCenter = stoppedCard.offsetLeft + stoppedCard.offsetWidth / 2 - currentScroll;
             if (Math.abs(stoppedCenter - containerCenter) > 45) {
               p.lastStoppedIndex = -1;
             }
           }
         }
 
-        // Deselect immediately when the user drags or boosts rapidly
         const isActivelyDragging = p.isDragging && p.dragActive;
         if (isActivelyDragging || Math.abs(p.carouselBoost) > 6) {
           p.pauseUntil = 0;
@@ -381,7 +375,7 @@ function App() {
             setSelectedProject(null);
           }
         } else if (
-          p.isAutoMode && // <--- ADDED isAutoMode check here
+          p.isAutoMode &&
           !p.isDragging &&
           !p.isPaused &&
           !isAutoPaused &&
@@ -391,12 +385,11 @@ function App() {
           p.lastStoppedIndex !== closestIndex &&
           !p.reduceMotion
         ) {
-          // A card reached the centre: snap, select (zoom in) and pause
           const cardNode = el.children[closestIndex];
           const targetScrollLeft = cardNode.offsetLeft - containerCenter + cardNode.offsetWidth / 2;
 
           p.scrollPos = targetScrollLeft;
-          el.scrollLeft = targetScrollLeft;
+          el.scrollLeft = Math.round(targetScrollLeft);
           p.carouselBoost = 0;
           p.pauseUntil = now + AUTO_PAUSE_MS;
           p.lastStoppedIndex = closestIndex;
@@ -418,7 +411,6 @@ function App() {
 
   /* ---------- input handlers ---------- */
   const handleWheel = (e) => {
-    // Let the content panel scroll normally instead of spinning the cube
     const panel = e.target && e.target.closest ? e.target.closest('.tron-panel-inner') : null;
     if (panel && panel.scrollHeight > panel.clientHeight + 1) return;
 
@@ -441,7 +433,6 @@ function App() {
     p.velRotY += amount * 0.10;
   };
 
-  // Carousel: one pointer pipeline for mouse, touch and pen
   const onCarouselDown = (e) => {
     const el = carouselRef.current;
     if (!el || (e.pointerType === 'mouse' && e.button !== 0)) return;
@@ -449,13 +440,13 @@ function App() {
     const x = e.clientX / appScaleRef.current;
     p.isDragging = true;
     p.dragActive = false;
-    p.dragGain = e.pointerType === 'mouse' ? 1.35 : 1; // fingers track 1:1
+    p.dragGain = e.pointerType === 'mouse' ? 1.35 : 1;
     p.downX = x;
     p.startX = x;
     p.dragTotal = 0;
     p.dragVelocity = 0;
     p.lastMoveTime = e.timeStamp;
-    p.carouselBoost = 0; // grabbing the carousel stops any momentum
+    p.carouselBoost = 0;
     p.targetScroll = null;
   };
 
@@ -470,8 +461,7 @@ function App() {
     p.dragTotal = Math.max(p.dragTotal, Math.abs(x - p.downX));
 
     if (!p.dragActive) {
-      if (p.dragTotal < TAP_SLOP) return; // still just a (slightly wobbly) tap
-      // Travelled far enough: this is a drag, not a tap
+      if (p.dragTotal < TAP_SLOP) return;
       p.dragActive = true;
       p.pauseUntil = 0;
       p.lastStoppedIndex = -1;
@@ -484,7 +474,6 @@ function App() {
     const dt = Math.max(e.timeStamp - p.lastMoveTime, 1);
     p.lastMoveTime = e.timeStamp;
     if (Math.abs(dx) > 0.2) {
-      // Normalised to px per 16.7ms so momentum feels the same on 60Hz and 120Hz screens
       p.dragVelocity = p.dragVelocity * 0.35 + (dx / dt) * 16.7 * 0.65;
     }
 
@@ -494,10 +483,10 @@ function App() {
       ? el.children[PROJECTS.length].offsetLeft - el.children[0].offsetLeft
       : 0;
     if (loop > 0) {
-      if (p.scrollPos >= loop) p.scrollPos -= loop;
-      if (p.scrollPos < 0) p.scrollPos += loop;
+      if (p.scrollPos >= loop * 2) p.scrollPos -= loop;
+      if (p.scrollPos < loop * 0.5) p.scrollPos += loop;
     }
-    el.scrollLeft = p.scrollPos;
+    el.scrollLeft = Math.round(p.scrollPos);
   };
 
   const onCarouselUp = (e) => {
@@ -506,7 +495,6 @@ function App() {
     if (!p.isDragging) return;
 
     if (p.dragActive) {
-      // A finger that rested before lifting shouldn't fling the carousel
       if (e && e.timeStamp - p.lastMoveTime > 80) p.dragVelocity = 0;
       const momentum = Math.min(Math.max(-p.dragVelocity * 1.5, -35), 35);
       if (Math.abs(momentum) > 1.5) {
@@ -522,7 +510,6 @@ function App() {
     p.dragVelocity = 0;
   };
 
-  // Cube: drag to spin, click (without dragging) to accelerate
   const onCubeDown = (e) => {
     const p = physics.current;
     p.cubeDragging = true;
@@ -550,18 +537,14 @@ function App() {
     if (p.cubeMoved < 4) boostCarousel(14);
   };
 
-  // Tap / click a card: glide it to the centre and HOLD it (details stay visible).
-  // Tapping the held card again lets it go; dragging, the arrows or the wheel also release it.
   const centerProject = (proj, index) => {
     const p = physics.current;
 
-    // Ignore the click that ends a drag
     if (p.dragTotal > TAP_SLOP) {
       p.dragTotal = 0;
       return;
     }
 
-    // Second tap on the held card: resume
     if (p.isPaused && p.lastSelectedId === proj.id) {
       p.lastSelectedId = null;
       setSelectedProject(null);
@@ -580,7 +563,6 @@ function App() {
     p.holdUntil = performance.now() + HOLD_MS;
     p.lastStoppedIndex = index;
     p.lastSelectedId = proj.id;
-    setIsHeld(true);
     setSelectedProject(proj);
   };
 
@@ -592,16 +574,26 @@ function App() {
   return (
     <div
       onWheel={handleWheel}
-      className="tron tron-root overflow-hidden bg-[#02050a] text-slate-100 flex flex-col select-none"
-      style={{ '--s': appScale }}
+      className="tron overflow-hidden bg-[#02050a] text-slate-100 flex flex-col select-none"
+      style={{
+        '--s': appScale,
+        transform: `scale(${appScale})`,
+        transformOrigin: 'top left',
+        width: `${100 / appScale}%`,
+        height: `${100 / appScale}dvh`,
+        position: 'absolute',
+        top: 0,
+        left: 0
+      }}
     >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Roboto:wght@300;400&display=swap');
 
-        html, body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-        .tron { font-family: 'Inter', 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif; font-weight: 400; -webkit-text-size-adjust: 100%; }
+        html, body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; overscroll-behavior: none; }
+        .tron { font-family: 'Inter', 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif; font-weight: 400; -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
         .orb  { font-family: 'Inter', 'Roboto', system-ui, sans-serif; font-weight: 700; }
         .light-copy { font-family: 'Roboto', 'Inter', system-ui, sans-serif; font-weight: 300; }
+        .tron button, .tron a, .tron [role="button"] { touch-action: manipulation; }
 
         .tron a:focus-visible, .tron button:focus-visible, .tron [role="button"]:focus-visible {
           outline: 2px solid ${ORANGE};
@@ -639,10 +631,16 @@ function App() {
         }
         .tron-panel-inner {
           background: rgba(3, 12, 20, 0.94); width: 100%; min-height: 0; overflow-y: auto;
+          overscroll-behavior: contain;
           clip-path: polygon(0 0, calc(100% - var(--c)) 0, 100% var(--c), 100% 100%, var(--c) 100%, 0 calc(100% - var(--c)));
         }
         .tron-panel-inner::-webkit-scrollbar { width: 6px; }
         .tron-panel-inner::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.4); }
+        .tron-panel-inner::after {
+          content: ''; display: block; position: sticky; bottom: 0; height: 22px; margin-top: -22px;
+          background: linear-gradient(to bottom, rgba(3,12,20,0), rgba(3,12,20,0.96));
+          pointer-events: none;
+        }
 
         /* ---- Cube ---- */
         .cube-scene { perspective: 800px; touch-action: pan-y; cursor: grab; }
@@ -668,36 +666,32 @@ function App() {
           filter: blur(4px);
         }
 
-        /* ---- Responsive root: scaled by JS, sized with dvh so mobile browser bars don't hide the footer ---- */
-        .tron-root {
-          position: absolute; top: 0; left: 0;
-          transform-origin: top left;
-          transform: scale(var(--s, 1));
-          width: calc(100% / var(--s, 1));
-          height: calc(100% / var(--s, 1));
-          height: calc(100dvh / var(--s, 1));
-        }
-        html, body { overscroll-behavior: none; }
-        .tron { -webkit-tap-highlight-color: transparent; }
-        .tron button, .tron a, .tron [role="button"] { touch-action: manipulation; }
-        /* Header tabs: full-width row on phones, compact (original) on tablet / desktop */
+        /* Header tabs: full-width row on phones, compact on tablet / desktop */
         .hdr-nav { display: flex; align-items: stretch; width: 100%; }
         .hdr-tab { flex: 1 1 0%; min-height: 44px; }
         @media (min-width: 640px) {
           .hdr-nav { width: auto; }
           .hdr-tab { flex: none; min-height: 0; }
         }
-        /* ---- Carousel: selected card zooms up from its bottom edge and may rise above the dock ---- */
+
+        /* ---- Carousel ---- */
         .carousel-wrap { position: relative; height: 116px; }
         .carousel-track {
-          position: absolute; left: 0; right: 0; bottom: 0; top: -64px; padding-top: 64px;
+          position: absolute; left: 0; right: 0; bottom: 0; top: -48px; padding-top: 48px;
           align-items: flex-end; pointer-events: none;
         }
         .carousel-track > * { pointer-events: auto; }
-        .carousel-card { --zoom: 1; transform: scale(var(--zoom)); transform-origin: 50% 100%; }
-        .carousel-card.is-selected { --zoom: 1.28; z-index: 5; }
-        .carousel-card:active { transform: scale(calc(var(--zoom) * 0.97)); }
-        /* Counter-scale the text so it keeps the same on-screen size while the card zooms */
+        .carousel-card {
+          --zoom: 1;
+          transform: translateZ(0) scale(var(--zoom));
+          transform-origin: 50% 100%;
+          will-change: transform;
+          backface-visibility: hidden;
+          transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1), border-color 300ms ease, box-shadow 300ms ease;
+        }
+        .carousel-card.is-selected { --zoom: 1.22; z-index: 5; }
+        .carousel-card:active { transform: translateZ(0) scale(calc(var(--zoom) * 0.97)); }
+        .carousel-card-img { will-change: transform, opacity; backface-visibility: hidden; }
         .carousel-title, .carousel-bar-inner {
           transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1), width 300ms cubic-bezier(0.4, 0, 0.2, 1), height 300ms cubic-bezier(0.4, 0, 0.2, 1);
         }
@@ -705,22 +699,14 @@ function App() {
         .carousel-bar { height: calc(30px / var(--zoom)); overflow: hidden; transition: height 300ms cubic-bezier(0.4, 0, 0.2, 1); }
         .carousel-bar-inner { width: calc(100% * var(--zoom)); height: calc(100% * var(--zoom)); transform: scale(calc(1 / var(--zoom))); transform-origin: 0 0; }
         @media (min-width: 640px) {
-          .carousel-wrap { height: 180px; }
-          .carousel-track { top: -100px; padding-top: 100px; }
-          .carousel-card.is-selected { --zoom: 1.4; }
-          .carousel-bar { height: calc(32px / var(--zoom)); }
+          .carousel-wrap { height: 154px; }
+          .carousel-track { top: -56px; padding-top: 56px; }
+          .carousel-card.is-selected { --zoom: 1.24; }
+          .carousel-bar { height: calc(28px / var(--zoom)); }
         }
         @media (prefers-reduced-motion: reduce) { .carousel-card, .carousel-title, .carousel-bar, .carousel-bar-inner { transition: none; } }
 
         .clamp-2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-
-        /* ---- Panel: contain scrolling + soft fade at the bottom so it is obvious there is more ---- */
-        .tron-panel-inner { overscroll-behavior: contain; }
-        .tron-panel-inner::after {
-          content: ''; display: block; position: sticky; bottom: 0; height: 22px; margin-top: -22px;
-          background: linear-gradient(to bottom, rgba(3,12,20,0), rgba(3,12,20,0.96));
-          pointer-events: none;
-        }
 
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -800,7 +786,7 @@ function App() {
       </header>
 
       {/* ==================== 2. CENTER: CUBE + CONSOLE ==================== */}
-      <main className="relative z-10 flex-1 min-h-0 flex items-center justify-center gap-10 xl:gap-16 px-3 sm:px-6 md:px-14 py-3 sm:py-4 max-w-7xl mx-auto w-full">
+      <main className="relative z-10 flex-1 min-h-0 flex items-center justify-center gap-10 xl:gap-16 px-3 sm:px-6 md:px-14 py-2 sm:py-3 max-w-7xl mx-auto w-full">
         {/* Cube (hidden on small screens to give the card the room) */}
         <div className="hidden lg:flex flex-col items-center shrink-0">
           <div
@@ -831,10 +817,10 @@ function App() {
         <div className="relative w-full max-w-2xl max-h-full flex">
           <div className="absolute -inset-1 bg-cyan-400/20 blur-2xl pointer-events-none" />
           <Panel className="w-full">
-            <div id="tabpanel-main" role="tabpanel" aria-labelledby={`tab-${activeTab}`} className="p-5 pb-7 sm:p-6 md:p-8 select-text">
+            <div id="tabpanel-main" role="tabpanel" aria-labelledby={`tab-${activeTab}`} className="p-5 pb-7 sm:p-6 md:p-7 select-text">
               {activeTab === 'overview' && (
                 <div>
-                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                     <span className="orb tracking-wider text-xs uppercase text-cyan-300 font-bold">Multi-Platform Developer</span>
                     <a
                       href="https://worldcampus.gamedu.tech/course/e7533e00-ce6f-11f1-923c-c93711ca83ed"
@@ -850,21 +836,21 @@ function App() {
                   <h1 className="orb tracking-tight text-2xl md:text-4xl font-extrabold text-white leading-tight [text-shadow:0_0_22px_rgba(0,229,255,0.35)]">
                     Carlos Madrazo, <span className="text-cyan-300">M.Sc.</span>
                   </h1>
-                  <h2 className="mt-2 text-lg md:text-xl font-bold text-slate-100">
+                  <h2 className="mt-1.5 text-lg md:text-xl font-bold text-slate-100">
                     Senior Software Engineer —{' '}
                     <span className="text-cyan-300">High-Performance Applications & Systems Architecture</span>
                   </h2>
 
-                  <p className="light-copy mt-4 text-base md:text-[17px] text-slate-200 leading-relaxed">
+                  <p className="light-copy mt-3 text-base md:text-[16.5px] text-slate-200 leading-relaxed">
                     14+ years architecting, modernizing, and profiling multi-million-line C++ codebases across Windows
                     (Steam, Epic, MS), PlayStation 5/4/Vita, XBOX Series X|S, Nintendo Switch 1 &amp; 2, and Mobile. Specialized
                     in CPU/GPU bottleneck mitigation, custom rendering pipelines, and zero-defect hardware compliance.
                   </p>
 
-                  <div className="hidden sm:flex flex-wrap items-center gap-3 mt-5 pt-4 border-t border-cyan-400/20 text-sm">
+                  <div className="hidden sm:flex flex-wrap items-center gap-3 mt-4 pt-3 border-t border-cyan-400/20 text-sm">
                     <a
                       href="mailto:c.madrazo.pimienta@gmail.com"
-                      className="px-4 py-2 bg-cyan-300 text-[#02050a] font-bold hover:bg-cyan-200 transition shadow-[0_0_20px_rgba(0,229,255,0.45)]"
+                      className="px-4 py-1.5 bg-cyan-300 text-[#02050a] font-bold hover:bg-cyan-200 transition shadow-[0_0_20px_rgba(0,229,255,0.45)]"
                     >
                       ✉ c.madrazo.pimienta@gmail.com
                     </a>
@@ -872,21 +858,21 @@ function App() {
                       href="https://linkedin.com/in/cmadrazo"
                       target="_blank"
                       rel="noreferrer"
-                      className="px-4 py-2 text-cyan-200 border border-cyan-300/50 hover:bg-cyan-300/10 transition"
+                      className="px-4 py-1.5 text-cyan-200 border border-cyan-300/50 hover:bg-cyan-300/10 transition"
                     >
                       in/cmadrazo ↗
                     </a>
                   </div>
 
-                  <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5 text-left">
+                  <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 text-left">
                     {[
                       ['Core languages', 'C/C++ • HLSL • Python'],
                       ['Architecture', 'UE 4/5 • Custom • Qt'],
                       ['Global teams', 'ES / EN / JLPT N3']
                     ].map(([k, v]) => (
-                      <div key={k} className="p-3 border-l-2 border-cyan-300/70 bg-cyan-300/[0.05]">
+                      <div key={k} className="p-2.5 border-l-2 border-cyan-300/70 bg-cyan-300/[0.05]">
                         <dt className="orb tracking-wider text-[10px] uppercase text-cyan-300/80">{k}</dt>
-                        <dd className="mt-1 text-base font-bold text-white">{v}</dd>
+                        <dd className="mt-0.5 text-sm md:text-base font-bold text-white">{v}</dd>
                       </div>
                     ))}
                   </dl>
@@ -898,10 +884,10 @@ function App() {
                   <div className="orb tracking-wider text-xs uppercase text-cyan-300 font-bold mb-2">
                     Systems architecture, teaching &amp; production
                   </div>
-                  <h2 className="orb tracking-tight text-xl md:text-2xl font-bold text-white mb-5">
+                  <h2 className="orb tracking-tight text-xl md:text-2xl font-bold text-white mb-4">
                     Bamtang Games • GAMEDU • Embassy of Mexico
                   </h2>
-                  <ul className="light-copy space-y-4 text-base md:text-[17px] text-slate-200 leading-relaxed">
+                  <ul className="light-copy space-y-3.5 text-base md:text-[16.5px] text-slate-200 leading-relaxed">
                     <li className="flex gap-4">
                       <span className="orb text-cyan-300 text-sm pt-1">01</span>
                       <span>
@@ -939,11 +925,11 @@ function App() {
                   <div className="orb tracking-wider text-xs uppercase text-cyan-300 font-bold mb-2">
                     Research, education &amp; open source
                   </div>
-                  <h2 className="orb tracking-tight text-xl md:text-2xl font-bold text-white mb-5">
+                  <h2 className="orb tracking-tight text-xl md:text-2xl font-bold text-white mb-4">
                     Waseda University (Japan) &amp; Chromium ANGLE
                   </h2>
-                  <div className="space-y-4 text-base md:text-[17px]">
-                    <div className="p-4 border-l-2 border-cyan-300/70 bg-cyan-300/[0.05]">
+                  <div className="space-y-3.5 text-base md:text-[16.5px]">
+                    <div className="p-3.5 border-l-2 border-cyan-300/70 bg-cyan-300/[0.05]">
                       <div className="font-bold text-white">
                         M.Sc. in Information, Production &amp; Systems Engineering — Waseda University
                       </div>
@@ -953,7 +939,7 @@ function App() {
                         Tecnológico de Monterrey.
                       </div>
                     </div>
-                    <div className="p-4 border-l-2 border-orange-400/80 bg-orange-400/[0.05]">
+                    <div className="p-3.5 border-l-2 border-orange-400/80 bg-orange-400/[0.05]">
                       <div className="font-bold text-orange-300">Google ANGLE (Chromium Graphics Layer) &amp; OpenFL/HXCPP</div>
                       <div className="light-copy text-slate-200 mt-1 leading-relaxed">
                         Diagnosed x86 POPCNT hardware instruction crash on Intel Xeon processors (Issue #42263082) and
@@ -971,11 +957,9 @@ function App() {
       {/* ==================== 3. DOCK: PROJECT CAROUSEL ==================== */}
       <section
         aria-label="Shipped projects"
-        className="relative z-20 bg-[#030811]/95 border-t border-cyan-400/30 pt-2 pb-1.5 sm:py-4 shrink-0 shadow-[0_-12px_32px_-14px_rgba(0,229,255,0.35)]"
+        className="relative z-20 bg-[#030811]/95 border-t border-cyan-400/30 pt-2 pb-1.5 sm:py-2.5 shrink-0 shadow-[0_-12px_32px_-14px_rgba(0,229,255,0.35)]"
       >
-        {/* The selected card grows upward (bottom stays anchored) and may rise above the dock */}
         <div className="carousel-wrap">
-
           <div
             ref={carouselRef}
             onPointerDown={onCarouselDown}
@@ -1003,7 +987,7 @@ function App() {
                       centerProject(proj, index);
                     }
                   }}
-                  className={`carousel-card ${isSelected ? 'is-selected' : ''} group relative flex flex-col w-[268px] sm:w-[380px] h-[116px] sm:h-[180px] overflow-hidden bg-[#050d18] border transition-all duration-300 shrink-0 cursor-grab active:cursor-grabbing ${
+                  className={`carousel-card ${isSelected ? 'is-selected' : ''} group relative flex flex-col w-[268px] sm:w-[350px] h-[116px] sm:h-[154px] overflow-hidden bg-[#050d18] border shrink-0 cursor-grab active:cursor-grabbing ${
                     isSelected
                       ? 'border-orange-400 shadow-[0_0_22px_rgba(255,154,31,0.4)]'
                       : 'border-cyan-400/30 hover:border-cyan-300 hover:shadow-[0_0_20px_rgba(0,229,255,0.35)]'
@@ -1026,14 +1010,14 @@ function App() {
                     />
                     <div className={`absolute inset-0 bg-gradient-to-t from-[#02050a] via-[#02050a]/70 to-transparent pointer-events-none transition-opacity duration-300 ${isSelected ? 'opacity-30' : 'opacity-100'}`} />
 
-                    <div className="absolute inset-0 px-3 pt-3 pb-1.5 sm:px-4 sm:pt-4 sm:pb-2 flex flex-col justify-end pointer-events-none">
+                    <div className="absolute inset-0 px-3 pt-3 pb-1.5 sm:px-3.5 sm:pt-3 sm:pb-1.5 flex flex-col justify-end pointer-events-none">
                       <div className="carousel-title flex flex-col min-w-0 pr-3">
-                        <h3 className={`text-sm sm:text-base font-bold leading-tight clamp-2 [text-shadow:0_1px_6px_rgba(0,0,0,0.95),0_0_2px_rgba(0,0,0,0.8)] transition-colors ${
+                        <h3 className={`text-sm sm:text-[15px] font-bold leading-tight clamp-2 [text-shadow:0_1px_6px_rgba(0,0,0,0.95),0_0_2px_rgba(0,0,0,0.8)] transition-colors ${
                           isSelected ? 'text-orange-200' : 'text-white group-hover:text-cyan-200'
                         }`}>
                           {proj.title}
                         </h3>
-                        <p className="text-[9px] sm:text-xs text-slate-200 truncate mt-0.5 sm:mt-1 [text-shadow:0_1px_5px_rgba(0,0,0,0.95)]">{proj.tech}</p>
+                        <p className="text-[9px] sm:text-xs text-slate-200 truncate mt-0.5 [text-shadow:0_1px_5px_rgba(0,0,0,0.95)]">{proj.tech}</p>
                       </div>
                     </div>
                   </div>
@@ -1041,31 +1025,31 @@ function App() {
                   {/* Black bar at the bottom for platforms and year */}
                   <div className="carousel-bar bg-black w-full shrink-0 z-10 border-t border-cyan-400/10">
                     <div className="carousel-bar-inner flex items-center justify-between px-3 sm:px-3.5">
-                    <div className="flex items-center gap-1">
-                      <span className="sm:hidden flex flex-nowrap gap-1">
-                        {proj.platforms_short.split(' • ').map((plat, idx) => (
-                          <span key={idx} className={`px-1.5 py-[3px] text-[10px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
-                            isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
-                          }`}>
-                            {plat}
-                          </span>
-                        ))}
+                      <div className="flex items-center gap-1">
+                        <span className="sm:hidden flex flex-nowrap gap-1">
+                          {proj.platforms_short.split(' • ').map((plat, idx) => (
+                            <span key={idx} className={`px-1.5 py-[3px] text-[10px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
+                              isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
+                            }`}>
+                              {plat}
+                            </span>
+                          ))}
+                        </span>
+                        <span className="hidden sm:flex flex-nowrap gap-1">
+                          {proj.platforms.split(' • ').map((plat, idx) => (
+                            <span key={idx} className={`px-1.5 py-[3px] text-[9.5px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
+                              isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
+                            }`}>
+                              {plat}
+                            </span>
+                          ))}
+                        </span>
+                      </div>
+                      <span className={`orb shrink-0 px-1.5 py-0.5 text-[10px] sm:text-[10.5px] font-bold border rounded-sm ${
+                        isSelected ? 'text-orange-200 border-orange-400/70 bg-orange-400/15' : 'text-cyan-200 border-cyan-300/50 bg-cyan-300/10'
+                      }`}>
+                        {proj.year}
                       </span>
-                      <span className="hidden sm:flex flex-nowrap gap-1">
-                        {proj.platforms.split(' • ').map((plat, idx) => (
-                          <span key={idx} className={`px-1.5 py-[3px] text-[10px] font-mono border rounded-[2px] leading-none whitespace-nowrap ${
-                            isSelected ? 'text-orange-200 border-orange-400/40 bg-orange-400/10' : 'text-cyan-200 border-cyan-400/30 bg-cyan-400/10'
-                          }`}>
-                            {plat}
-                          </span>
-                        ))}
-                      </span>
-                    </div>
-                    <span className={`orb shrink-0 px-1.5 py-0.5 text-[10px] sm:text-[11px] font-bold border rounded-sm ${
-                      isSelected ? 'text-orange-200 border-orange-400/70 bg-orange-400/15' : 'text-cyan-200 border-cyan-300/50 bg-cyan-300/10'
-                    }`}>
-                      {proj.year}
-                    </span>
                     </div>
                   </div>
                 </div>
@@ -1074,8 +1058,8 @@ function App() {
           </div>
         </div>
 
-        {/* Tablet / desktop header row (omitted on mobile so the carousel sits directly above the license footer) */}
-        <div className="hidden sm:flex px-6 md:px-12 mt-3 flex-wrap items-center justify-between gap-2">
+        {/* Tablet / desktop header row */}
+        <div className="hidden sm:flex px-6 md:px-12 mt-2 flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3 min-w-0 shrink">
             <span className="inline-block w-2 h-2 bg-cyan-300 shadow-[0_0_10px_#00E5FF] shrink-0" />
             <h2 className="orb tracking-wider text-xs font-bold uppercase text-slate-100 whitespace-nowrap">Shipped &amp; in production</h2>
@@ -1090,14 +1074,14 @@ function App() {
             <span className="hidden md:inline text-xs text-slate-400 mr-2">Click a card to hold it · drag or scroll to spin</span>
             <button
               onClick={() => boostCarousel(-22)}
-              className="orb tracking-wider px-3 py-1.5 text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition whitespace-nowrap"
+              className="orb tracking-wider px-3 py-1 text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition whitespace-nowrap"
               aria-label="Accelerate carousel backward"
             >
               ‹‹ REV
             </button>
             <button
               onClick={() => setIsAutoMode(!isAutoMode)}
-              className={`orb tracking-wider px-3 py-1.5 text-[11px] font-bold transition whitespace-nowrap border ${
+              className={`orb tracking-wider px-3 py-1 text-[11px] font-bold transition whitespace-nowrap border ${
                 isAutoMode 
                   ? 'bg-orange-400/20 text-orange-200 border-orange-400/70 shadow-[0_0_10px_rgba(255,154,31,0.4)]' 
                   : 'text-slate-200 border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200'
@@ -1108,7 +1092,7 @@ function App() {
             </button>
             <button
               onClick={() => boostCarousel(22)}
-              className="orb tracking-wider px-3 py-1.5 text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition whitespace-nowrap"
+              className="orb tracking-wider px-3 py-1 text-[11px] text-slate-200 border border-cyan-400/40 hover:bg-cyan-300/10 hover:text-cyan-200 transition whitespace-nowrap"
               aria-label="Accelerate carousel forward"
             >
               FWD ››
